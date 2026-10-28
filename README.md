@@ -1,1 +1,103 @@
-# safe
+# S.A.F.E. — Secure Android Forensic Extractor
+
+Herramienta de escritorio (Node.js + Electron) para la **adquisición forense de dispositivos Android**
+con integridad verificable: cada evidencia recibe un **hash SHA-256**, un **sello de tiempo en la
+blockchain de Bitcoin (OpenTimestamps)** y un **informe PDF comprimido**.
+
+![Interfaz de S.A.F.E.](docs/img/interfaz-caso.png)
+
+## Funciones
+
+| Función | Descripción |
+|---|---|
+| **Copia de seguridad ADB** | `adb backup` (APK, almacenamiento compartido, OBB, apps del sistema) con progreso y cancelación. |
+| **Pantalla en vivo + grabación** | Vista en directo (H.264 vía WebCodecs) mientras se graba en segmentos de 3 min; capturas de pantalla puntuales. |
+| **Archivos multimedia** | `adb pull -a` de cualquier ruta (DCIM, WhatsApp…). **Se conserva el nombre original** de cada archivo y se destaca en el informe. |
+| **Navegador interno** | Navegador aislado (sesión propia) con «Capturar y sellar»: PNG de la página + página archivada MHTML + URL. |
+| **App en primer plano** | Se obtiene con `adb shell dumpsys window` (`mCurrentFocus`, con `mFocusedApp` de respaldo) y se incluye en el informe; durante la grabación se registra una cronología. |
+| **Verificación previa obligatoria** | Antes de **cada** extracción se comprueba Internet y la disponibilidad del servicio de sellado, y se deja constancia (`preflight/*.json` + cadena de custodia). |
+| **Cadena de custodia** | Registro `custody.log.jsonl` encadenado por hash (detecta manipulaciones). |
+
+### Comportamiento sin conexión
+Si no hay Internet (o el servicio OpenTimestamps no responde) S.A.F.E. avisa: *la extracción es viable,
+pero se recomienda estar conectado para validar la integridad en blockchain*. Si el usuario continúa,
+la evidencia se hashea y se informa igualmente, queda marcada **«Sin sellar»** y puede sellarse después
+desde **Evidencias → Sellar / actualizar pruebas OTS** (el hash ya está fijado, por lo que el sello
+posterior sigue probando el contenido, aunque con la fecha del sellado).
+
+## Qué se genera por cada evidencia
+
+```
+SAFE-Casos/<CASO>/
+├── case.json                  datos del caso
+├── custody.log.jsonl          cadena de custodia (hash encadenado)
+├── evidence.json              índice de evidencias
+├── preflight/                 constancias de la verificación previa
+└── evidence/EV-0001/
+    ├── IMG_2041.jpg           archivo ORIGINAL (nombre intacto, solo lectura)
+    ├── IMG_2041.jpg.sha256    SHA-256 del original
+    ├── IMG_2041.jpg.ots       prueba OpenTimestamps
+    ├── miniatura.jpg          miniatura (capturas e imágenes)
+    ├── informe_EV-0001.pdf    informe PDF comprimido
+    └── paquete_EV-0001.zip    ZIP (informe + hash + .ots)
+```
+
+El **informe PDF** incluye: nombre del archivo (destacado), tipo, tamaño, ruta de origen, **SHA-256**,
+**fecha de extracción** (UTC y local), **dispositivo de origen** (fabricante, modelo, nº de serie,
+Android, build, Android ID), app en primer plano, estado del sellado, constancia de la verificación
+previa y **miniatura** de la captura.
+
+![Informe de ejemplo](docs/img/informe-ejemplo.png)
+
+## Inicio rápido
+
+```bash
+git clone https://github.com/custodydev/safe.git
+cd safe
+npm install
+npm start
+```
+
+Necesita [ADB (Android platform-tools)](https://developer.android.com/tools/releases/platform-tools).
+Instrucciones completas: **[docs/INSTALACION.md](docs/INSTALACION.md)** ·
+Manual de uso: **[docs/GUIA_DE_USO.md](docs/GUIA_DE_USO.md)**.
+
+## Arquitectura
+
+```
+main.js            proceso principal Electron (IPC, puerta de verificación previa, navegador)
+preload.js         puente seguro (contextIsolation)
+renderer/          interfaz (HTML/CSS/JS, decodificador H.264 en vivo)
+src/core/
+  adb.js           envoltorio de ADB (dispositivos, info, foco, screencap, backup, pull, screenrecord)
+  net.js           comprobación de Internet y calendarios OpenTimestamps
+  preflight.js     verificación previa + constancia
+  ots.js           sellado / actualización / verificación con la librería `opentimestamps`
+  evidence.js      hash → sello → miniatura → PDF → ZIP → custodia
+  report.js        informe PDF (pdfkit, comprimido) y paquete ZIP
+  casestore.js     carpeta de caso y cadena de custodia
+  acquire.js       adquisiciones (captura, backup, grabación, pull)
+test/              pruebas automáticas con un ADB simulado
+```
+
+Pruebas: `npm test`.
+
+## Limitaciones conocidas (léalas antes de un peritaje)
+
+- **`adb backup` está en desuso**: Android 12+ lo limita (las apps que lo excluyen no se copian) y
+  exige confirmar en el dispositivo. Es una adquisición **lógica**, no un volcado físico.
+- La grabación usa `screenrecord`: segmentos de **180 s** con una pausa de ~1 s entre ellos; el original
+  es H.264 crudo (`.h264`). Si hay `ffmpeg` en el PATH se añade una copia `.mp4` derivada (evidencia aparte, enlazada).
+  Contenido protegido (DRM/`FLAG_SECURE`) se graba en negro.
+- Un sello OpenTimestamps nuevo es **«pendiente»** hasta que el calendario lo ancla en Bitcoin
+  (normalmente horas). Use *Sellar / actualizar* más tarde para completarlo.
+- El sellado prueba que el hash **existía** en esa fecha; no acredita por sí solo la autoría ni la legalidad de la obtención.
+- Verificación real contra los calendarios públicos no se ha podido probar en el entorno de desarrollo (sin acceso); el flujo se valida con un calendario simulado.
+
+## Uso legal y ético
+Utilice S.A.F.E. únicamente sobre dispositivos que posea o para los que tenga **autorización expresa**
+(consentimiento del titular u orden judicial). El examinador es responsable del cumplimiento de la
+normativa aplicable (p. ej. protección de datos) y de documentar la cadena de custodia.
+
+## Licencia
+MIT — ver [LICENSE](LICENSE).
