@@ -75,3 +75,4 @@ td:first-child{white-space:nowrap}
 #fTable input[type=checkbox]{width:auto;margin:0}
 .tablecard .urlbar{border-bottom:1px solid var(--line)}
 .ok{color:var(--ok)}.bad{color:var(--bad)}
+.steps{margin:8px 0 14px;padding-left:20px;color:var(--mute)}.steps li{margin:3px 0}#finResult table{margin-top:10px}

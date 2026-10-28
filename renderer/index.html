@@ -20,6 +20,7 @@
       <button data-view="files"><i>④</i>Explorador de archivos</button>
       <button data-view="evidence"><i>⑤</i>Evidencias <span id="evCount" class="badge">0</span></button>
       <button data-view="log"><i>⑥</i>Cadena de custodia</button>
+      <button data-view="final"><i>⑦</i>Finalizar caso</button>
     </nav>
     <div class="side-foot">v1.0.0 · SHA-256 + OpenTimestamps</div>
   </aside>
@@ -129,6 +130,18 @@
       <h1>Cadena de custodia</h1>
       <div class="row bar"><button id="btnLogVerify">Verificar cadena de hashes</button><span id="logState" class="hint"></span></div>
       <div class="card"><pre id="logBox" class="logbox"></pre></div>
+    </section>
+
+    <section id="view-final" class="view">
+      <h1>Finalizar caso</h1>
+      <div class="card">
+        <p>Cuando termine toda la extracción, S.A.F.E. realiza el <b>cierre del caso</b>:</p>
+        <ol class="steps"><li>Recalcula el SHA-256 de todas las evidencias y verifica la cadena de custodia.</li><li>Genera un manifiesto (<code>MANIFEST.json</code> / <code>.sha256</code>) con el hash de cada archivo.</li><li>Comprime el caso completo en un único ZIP.</li><li>Calcula el SHA-256 del ZIP y lo sella en OpenTimestamps.</li><li><b>Validación final:</b> relee el ZIP y comprueba que cada archivo coincide con el manifiesto y con el hash de su evidencia.</li></ol>
+        <div class="row"><button id="btnFinalize" class="primary">Finalizar y comprimir caso</button><button id="btnFinalFolder" class="ghost" disabled>Mostrar paquete</button></div>
+        <div class="progress"><div></div></div>
+        <p id="finStatus" class="hint">Detenga antes cualquier sesión en vivo, grabación o copia en curso.</p>
+        <div id="finResult"></div>
+      </div>
     </section>
 
     <footer class="toast-area" id="toasts"></footer>

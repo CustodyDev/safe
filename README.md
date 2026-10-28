@@ -17,6 +17,7 @@ blockchain de Bitcoin (OpenTimestamps)** y un **informe PDF comprimido**.
 | **Verificar sello** | Por evidencia: comprueba que el hash del archivo = registro = `.sha256` = hash **dentro del `.ots`**, y consulta su estado en Bitcoin. |
 | **App en primer plano** | Se obtiene con `adb shell dumpsys window` (`mCurrentFocus`, con `mFocusedApp` de respaldo) y se incluye en el informe; durante la grabación se registra una cronología. |
 | **Verificación previa obligatoria** | Antes de **cada** extracción se comprueba Internet y la disponibilidad del servicio de sellado, y se deja constancia (`preflight/*.json` + cadena de custodia). |
+| **Finalizar caso** | Al terminar: verifica la integridad de todas las evidencias y de la custodia, genera un manifiesto, **comprime el caso completo en un ZIP**, calcula y sella su SHA-256 y hace una **validación final releyendo el ZIP** (cada archivo = manifiesto = hash de su evidencia). |
 | **Cadena de custodia** | Registro `custody.log.jsonl` encadenado por hash (detecta manipulaciones). |
 
 ![Explorador de archivos con SHA-256 en el dispositivo](docs/img/interfaz-archivos.png)
@@ -36,6 +37,7 @@ SAFE-Casos/<CASO>/
 ├── custody.log.jsonl          cadena de custodia (hash encadenado)
 ├── evidence.json              índice de evidencias
 ├── preflight/                 constancias de la verificación previa
+├── MANIFEST.json / .sha256    (al finalizar) hash de cada archivo del caso
 └── evidence/EV-0001/
     ├── IMG_2041.jpg           archivo ORIGINAL (nombre intacto, solo lectura)
     ├── IMG_2041.jpg.sha256    SHA-256 del original
@@ -44,6 +46,8 @@ SAFE-Casos/<CASO>/
     ├── informe_EV-0001.pdf    informe PDF comprimido
     └── paquete_EV-0001.zip    ZIP (informe + hash + .ots)
 ```
+
+Al finalizar se crea junto a la carpeta del caso: `CASO_FINAL_<fecha>.zip`, `.zip.sha256`, `.zip.ots` y `.zip.verificacion.json`.
 
 El **informe PDF** incluye: nombre del archivo (destacado), tipo, tamaño, ruta de origen, **SHA-256**,
 **fecha de extracción** (UTC y local), **dispositivo de origen** (fabricante, modelo, nº de serie,
@@ -77,6 +81,7 @@ src/core/
   net.js           comprobación de Internet y calendarios OpenTimestamps
   preflight.js     verificación previa + constancia
   ots.js           sellado / actualización / verificación con la librería `opentimestamps`
+  finalize.js      cierre: manifiesto, ZIP completo, sello y validación final
   evidence.js      hash → sello → miniatura → PDF → ZIP → custodia
   report.js        informe PDF (pdfkit, comprimido) y paquete ZIP
   casestore.js     carpeta de caso y cadena de custodia

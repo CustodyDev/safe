@@ -67,13 +67,30 @@ Tabla con ID, **nombre de archivo**, tipo, SHA-256, fecha UTC y estado del sello
   (Se vuelve a hacer la verificación previa.)
 - **Verificar integridad**: recalcula el SHA-256 de todos los originales y lo compara con el registrado.
 - **Informe** abre el PDF; **Carpeta** muestra la evidencia en el explorador.
-- **Verificar sello**: ver §9.
+- **Verificar sello**: ver §10.
 
 ## 8. Cadena de custodia (⑥)
 Lista las operaciones (apertura, verificaciones previas, hashes, sellos, sesiones en vivo…). **Verificar cadena de hashes** detecta
 si el registro fue alterado.
 
-## 9. ¿Cómo compruebo que el SHA-256 sellado en OpenTimestamps es el de mi caso?
+## 9. Finalizar caso (⑦)
+Al terminar toda la extracción (sin sesión en vivo, grabación ni copia en curso), abra **Finalizar caso** y pulse **Finalizar y comprimir caso**:
+1. Recalcula el SHA-256 de todas las evidencias y verifica la cadena de custodia.
+2. Genera `MANIFEST.json` y `MANIFEST.sha256` (hash de cada archivo del caso).
+3. Comprime **todo el caso** en `CASO_FINAL_<fecha>.zip` (junto a la carpeta del caso).
+4. Calcula el SHA-256 del ZIP (`.zip.sha256`) y lo sella en OpenTimestamps (`.zip.ots`; la verificación previa de internet se repite).
+5. **Validación final**: relee el ZIP completo y comprueba (a) que no está corrupto (CRC), (b) que cada archivo coincide con el manifiesto,
+   (c) que cada original coincide con el hash registrado de su evidencia y (d) que el hash del ZIP no cambia. El resultado queda en
+   `.zip.verificacion.json` y en la cadena de custodia.
+
+Resultados: **OK**, **OK con avisos** (p. ej. evidencias sin sellar por falta de conexión; selle después con *Evidencias → Sellar*) o **FALLO** (alguna
+comprobación de integridad no coincide: no use el paquete y revise el detalle). Las entradas de custodia posteriores al ZIP (`finalize.done`) quedan solo
+en la carpeta del caso: la copia dentro del ZIP es un prefijo válido de la cadena.
+
+Para verificar el ZIP por un tercero: `sha256sum CASO_FINAL_*.zip` = `.zip.sha256`, `ots verify CASO_FINAL_*.zip.ots`, y tras descomprimir
+`sha256sum -c MANIFEST.sha256`.
+
+## 10. ¿Cómo compruebo que el SHA-256 sellado en OpenTimestamps es el de mi caso?
 **Dentro de S.A.F.E.** — *Evidencias → Verificar sello* en la fila. Muestra cuatro valores que deben ser idénticos:
 1. SHA-256 del archivo **recalculado ahora**,
 2. el del registro del caso (`evidence.json`),
@@ -92,7 +109,7 @@ y el estado en Bitcoin (pendiente / confirmado con nº de bloque y fecha).
 
 Un sello nuevo estará «pendiente» hasta que el calendario lo ancle en Bitcoin (horas). Use *Sellar / actualizar pruebas OTS* después.
 
-## 10. Buenas prácticas
+## 11. Buenas prácticas
 - Documente la autorización y trabaje sobre una **copia** de la carpeta del caso para análisis.
 - Mantenga el dispositivo cargado, en modo avión si procede, y sin bloqueo de pantalla durante la extracción.
 - Haga el sellado definitivo (**Confirmado**) y conserve `.ots`, `.sha256`, PDF y `custody.log.jsonl` junto al original.

@@ -7,6 +7,7 @@ const { Adb } = require('./src/core/adb');
 const { CaseStore } = require('./src/core/casestore');
 const { EvidenceManager } = require('./src/core/evidence');
 const { Acquirer } = require('./src/core/acquire');
+const { finalizeCase } = require('./src/core/finalize');
 const { runPreflight } = require('./src/core/preflight');
 const { checkConnectivity, setFetcher } = require('./src/core/net');
 
@@ -102,7 +103,13 @@ function registerIpc() {
   handle('fs:hash', async ({ serial, paths, ack }) => { await gate('fs-hash', ack); return acq.hashRemote(serial, paths); });
   handle('fs:extract', async ({ serial, paths, ack }) => acq.extractFiles(serial, paths, await gate('extract', ack)));
 
+  handle('case:finalize', async ({ ack }) => {
+    if (acq.live || acq.backup) throw new Error('Finalice antes la sesión en vivo / grabación / copia en curso.');
+    const pf = await gate('finalize', ack);
+    return finalizeCase(store, mgr, { preflight: pf, onProgress: (m) => emit('progress', { kind: 'finalize', message: m }) });
+  });
   handle('ev:list', () => (store ? store.list() : []));
+  handle('ev:revealPath', ({ file }) => { if (store && path.dirname(file) === path.dirname(store.dir)) shell.showItemInFolder(file); });
   handle('ev:reveal', ({ id }) => { const r = store.list().find((e) => e.id === id); if (r) shell.showItemInFolder(path.join(store.dir, r.relPath)); });
   handle('ev:openReport', ({ id }) => { const r = store.list().find((e) => e.id === id); if (r) shell.openPath(path.join(store.dir, r.reportFile)); });
   handle('ev:refreshOts', async ({ ack }) => mgr.refreshTimestamps(await gate('ots-refresh', ack)));

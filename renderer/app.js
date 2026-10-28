@@ -169,7 +169,7 @@ api.on('recording', (s) => {
 });
 api.on('evidence', (rec) => { toast(`Evidencia ${rec.id} · ${rec.fileName}`); loadEvidence(); });
 api.on('error', (e) => toast(e.message, true));
-api.on('progress', (p) => { if (p.kind === 'backup') $('#bkStatus').textContent = `${p.message} ${p.bytes ? (p.bytes / 1048576).toFixed(1) + ' MB' : ''}`; if (p.kind === 'fs') $('#fsStatus').textContent = p.message; });
+api.on('progress', (p) => { if (p.kind === 'backup') $('#bkStatus').textContent = `${p.message} ${p.bytes ? (p.bytes / 1048576).toFixed(1) + ' MB' : ''}`; if (p.kind === 'fs') $('#fsStatus').textContent = p.message; if (p.kind === 'finalize') $('#finStatus').textContent = p.message; });
 
 // ---------- explorador de archivos ----------
 const fmtSize = (n) => (n < 1024 ? n + ' B' : n < 1048576 ? (n / 1024).toFixed(1) + ' KB' : n < 1073741824 ? (n / 1048576).toFixed(1) + ' MB' : (n / 1073741824).toFixed(2) + ' GB');
@@ -237,6 +237,21 @@ async function verifyOne(id) {
 }
 $('#btnOts').onclick = async () => { if (!need(false)) return; const r = await act('ev:refreshOts'); if (r) { toast(r.length ? r.map((x) => `${x.id}: ${x.from}→${x.to}`).join(' · ') : 'Nada pendiente'); loadEvidence(); } };
 $('#btnVerify').onclick = async () => { const r = await api.call('ev:verify'); if (!r.ok) return toast(r.error, true); const bad = r.data.filter((x) => !x.ok); toast(bad.length ? `¡${bad.length} evidencia(s) NO coinciden: ${bad.map((b) => b.id).join(', ')}!` : `✔ ${r.data.length} evidencia(s) íntegras`, !!bad.length); };
+
+// ---------- cierre del caso ----------
+let lastPackage = null;
+$('#btnFinalize').onclick = async () => {
+  if (!need(false)) return;
+  if (!await confirmDialog('Finalizar caso', 'Se verificará la integridad, se comprimirá todo el caso en un ZIP y se validará el resultado. Esto puede tardar según el tamaño. ¿Continuar?')) return;
+  $('#btnFinalize').disabled = true; $('#finResult').innerHTML = ''; $('#finStatus').parentElement.querySelector('.progress').classList.add('busy');
+  const r = await act('case:finalize');
+  $('#btnFinalize').disabled = false; $('#finStatus').parentElement.querySelector('.progress').classList.remove('busy');
+  if (!r) { $('#finStatus').textContent = 'Cierre no completado.'; return; }
+  lastPackage = r; $('#btnFinalFolder').disabled = false;
+  $('#finStatus').textContent = r.status === 'FALLO' ? '✘ El cierre terminó con FALLOS de validación.' : r.status === 'OK' ? '✔ Caso finalizado y validado.' : '⚠ Caso finalizado y validado, con avisos (p. ej. evidencias sin sellar).';
+  $('#finResult').innerHTML = `<div class="note ${r.status === 'FALLO' ? 'warn' : ''}"><b>${r.status === 'FALLO' ? 'VALIDACIÓN FINAL FALLIDA' : r.status === 'OK' ? 'VALIDACIÓN FINAL CORRECTA' : 'VALIDACIÓN FINAL CORRECTA (CON AVISOS)'}</b></div><table><tbody>${r.checks.map((c) => `<tr><td class="${c.ok ? 'ok' : c.warn ? '' : 'bad'}">${c.ok ? '✔' : c.warn ? '⚠' : '✘'}</td><td>${esc(c.name)}</td><td class="hint">${esc(c.detail)}</td></tr>`).join('')}</tbody></table><p class="mono hint">${esc(r.zipFile)}<br>SHA-256 ${r.zipSha256} · ${fmtSize(r.zipSize)} · sello: ${esc(r.zipOts)}</p>`;
+};
+$('#btnFinalFolder').onclick = () => lastPackage && api.call('ev:revealPath', { file: lastPackage.zipFile });
 
 // ---------- custodia ----------
 async function loadLog() { const r = await api.call('ev:log'); if (r.ok) $('#logBox').textContent = r.data.map((l) => `#${l.seq} ${l.ts} ${l.action} ${JSON.stringify(l.details)}\n    hash ${l.hash}`).join('\n'); }
