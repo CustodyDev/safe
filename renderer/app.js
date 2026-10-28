@@ -4,6 +4,15 @@ const api = window.safe;
 const state = { caseOpen: false, serial: '', recTimer: null, recStart: 0, fgTimer: null, connected: false, cwd: '/sdcard', entries: [], hashes: {} };
 const live = new LiveVideo($('#live'), { onNeedKey: () => api.control({ t: 'keyframe' }) });
 
+// ---------- tema: Nord (oscuro) / Arena (claro) ----------
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t; $('#btnTheme').textContent = t === 'nord' ? '☀' : '☾';
+  $('#btnTheme').title = t === 'nord' ? 'Cambiar a tema Arena (claro)' : 'Cambiar a tema Nord (oscuro)';
+  try { localStorage.setItem('safe.theme', t); } catch (_) { /* sin almacenamiento */ }
+}
+$('#btnTheme').onclick = () => applyTheme(document.documentElement.dataset.theme === 'nord' ? 'sand' : 'nord');
+(function () { let t = 'nord'; try { t = localStorage.getItem('safe.theme') || 'nord'; } catch (_) { /* */ } applyTheme(t === 'sand' ? 'sand' : 'nord'); })();
+
 // ---------- utilidades ----------
 function toast(msg, bad) {
   const t = document.createElement('div'); t.className = 'toast' + (bad ? ' bad' : ''); t.textContent = msg;
@@ -117,16 +126,17 @@ async function pollFg() {
   $('#fgApp').textContent = r.ok && r.data.component ? r.data.component : '—';
 }
 function setConnected(on) {
-  state.connected = on; $('#btnLive').disabled = on; $('#btnLiveStop').disabled = !on; $('#btnRec').disabled = !on;
-  $('#recState').textContent = on ? 'Conectado' : 'Sin conexión'; showLive(on);
+  state.connected = on; $('#btnLive').disabled = on; $('#btnLive').hidden = on; $('#btnLiveStop').disabled = !on; $('#btnLiveStop').hidden = !on; $('#btnRec').disabled = !on;
+  $('#recState').textContent = on ? 'Listo para grabar' : 'Conecte la pantalla para grabar'; showLive(on);
+  $('#connState').textContent = on ? '✔ Conectado' : 'Desconectado'; $('#stepConnect').classList.toggle('done', on);
   clearInterval(state.fgTimer); if (on) { state.fgTimer = setInterval(pollFg, 3000); pollFg(); } else { live.reset(); $('#liveFps').textContent = '— fps'; }
 }
 $('#btnLive').onclick = async () => {
   if (!need()) return;
   live.reset();
-  $('#btnLive').disabled = true; $('#recState').textContent = 'Conectando…';
+  $('#btnLive').disabled = true; $('#connState').textContent = 'Conectando…'; $('#recState').textContent = 'Conectando…';
   const r = await act('act:liveStart', { serial: state.serial, maxSize: $('#optSize').value, control: $('#optControl').checked && $('#optEngine').value === 'scrcpy', engine: $('#optEngine').value });
-  if (r === null) { $('#btnLive').disabled = false; $('#recState').textContent = 'Sin conexión'; }
+  if (r === null) { $('#btnLive').disabled = false; $('#connState').textContent = 'Desconectado'; $('#recState').textContent = 'Conecte la pantalla para grabar'; }
 };
 $('#btnLiveStop').onclick = () => api.call('act:liveStop');
 api.on('live:ready', (r) => { setConnected(true); toast(`Conectado (${r.engine === 'native' ? 'ADB nativo' : 'scrcpy'}): ${r.deviceName}${r.w ? ` (${r.w}×${r.h})` : ''}`); $('#live').focus(); });
@@ -162,12 +172,17 @@ $('#btnShot').onclick = async () => {
 };
 $('#btnRec').onclick = async () => { if (!state.connected) return; await act('act:recStart'); };
 $('#btnRecStop').onclick = () => { $('#btnRecStop').disabled = true; $('#recState').textContent = 'Finalizando, calculando hash y sellando…'; api.call('act:recStop'); };
+const fmtClock = (t) => String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0');
 api.on('recording', (s) => {
   clearInterval(state.recTimer);
   if (s.active) {
-    $('#btnRec').disabled = true; $('#btnRecStop').disabled = false; $('#recState').textContent = '● Grabando'; state.recStart = Date.now();
-    state.recTimer = setInterval(() => { const t = Math.floor((Date.now() - state.recStart) / 1000); $('#recTime').textContent = String(Math.floor(t / 60)).padStart(2, '0') + ':' + String(t % 60).padStart(2, '0'); }, 500);
-  } else if (!s.finalizing) { $('#btnRec').disabled = !state.connected; $('#btnRecStop').disabled = true; $('#recState').textContent = state.connected ? 'Conectado' : 'Sin conexión'; loadEvidence(); if (state.connected) toast('Grabación finalizada y sellada'); }
+    $('#btnRec').disabled = true; $('#btnRec').hidden = true; $('#btnRecStop').disabled = false; $('#btnRecStop').hidden = false; $('#recCard').classList.add('recording');
+    $('#recState').textContent = 'Grabando'; state.recStart = Date.now(); $('#recTime').textContent = '00:00';
+    state.recTimer = setInterval(() => { $('#recTime').textContent = fmtClock(Math.floor((Date.now() - state.recStart) / 1000)); }, 500);
+  } else if (!s.finalizing) {
+    $('#btnRec').hidden = false; $('#btnRec').disabled = !state.connected; $('#btnRecStop').hidden = true; $('#btnRecStop').disabled = true; $('#recCard').classList.remove('recording');
+    $('#recState').textContent = state.connected ? 'Listo para grabar' : 'Conecte la pantalla para grabar'; loadEvidence(); if (state.connected) toast('Grabación finalizada y sellada');
+  }
 });
 api.on('evidence', (rec) => { toast(`Evidencia ${rec.id} · ${rec.fileName}`); loadEvidence(); });
 api.on('error', (e) => toast(e.message, true));
