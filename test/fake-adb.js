@@ -32,6 +32,12 @@ else if (a[0] === 'shell' && /^ls -lA/.test(a[1])) {
   console.log(hits.join('\n'));
 } else if (a[0] === 'shell' && /^stat -c/.test(a[1])) { const f = FILES[shArg(a[1])]; if (!f) { console.error('stat: No such file'); process.exit(1); } console.log(`${f.length} 1770733320`); }
 else if (a[0] === 'shell' && /^sha256sum/.test(a[1])) { const p = shArg(a[1]); const f = FILES[p]; if (!f) { console.error('No such file'); process.exit(1); } console.log(`${sha(f)}  ${p}`); }
+else if (a[0] === 'shell' && a[1] === 'wm size') console.log('Physical size: 1080x2400');
+else if (a[0] === 'exec-out' && a[1] === 'screenrecord') {
+  const nal = (t, n) => Buffer.concat([Buffer.from([0, 0, 0, 1, t]), Buffer.alloc(n, t)]);
+  process.stdout.write(Buffer.concat([nal(0x67, 6), nal(0x68, 3), nal(0x65, 40)]));
+  let i = 0; const t = setInterval(() => { process.stdout.write(nal(0x41, 15)); if (++i >= 6) { clearInterval(t); process.exit(0); } }, 40);
+}
 else if (a[0] === 'exec-out' && a[1] === 'screencap') process.stdout.write(PNG);
 else if (a[0] === 'backup') { const f = a[a.indexOf('-f') + 1]; fs.writeFileSync(f, Buffer.concat([Buffer.from('ANDROID BACKUP\n5\n1\nnone\n'), Buffer.alloc(8192, 1)])); }
 else if (a[0] === 'pull') {

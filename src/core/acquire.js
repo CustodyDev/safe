@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const { safeName } = require('./casestore');
 const { sha256File } = require('./hash');
+const { NativeSession } = require('./nativecast');
 const { ScrcpySession, VERSION, ACTION, msgTouch, msgKey, msgText, msgScroll } = require('./scrcpy');
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
@@ -70,13 +71,16 @@ class Acquirer {
 
   // ---------- pantalla en vivo, control y grabación en un único archivo ----------
 
-  async startLive(serial, { maxSize = 0, control = true } = {}) {
+  /** engine: 'scrcpy' (interactivo; sube scrcpy-server) o 'native' (solo ADB `screenrecord`; sin huella ni interacción). */
+  async startLive(serial, { maxSize = 0, control = true, engine = 'scrcpy' } = {}) {
     const { adb, store, emit } = this.ctx;
     if (this.live) throw new Error('Ya hay una sesión en vivo');
-    const session = new ScrcpySession(adb, serial, { maxSize, control });
-    const live = { session, serial, control, inputs: 0, rec: null };
+    const native = engine === 'native';
+    const session = native ? new NativeSession(adb, serial, { maxSize }) : new ScrcpySession(adb, serial, { maxSize, control });
+    const live = { session, serial, control: !native && control, engine: native ? 'native' : 'scrcpy', inputs: 0, rec: null };
     this.live = live;
-    session.on('ready', (r) => { store.log('live.start', { serial, control, maxSize, scrcpyVersion: VERSION, serverSha256: r.jarSha256 }); emit('live:ready', r); });
+    session.on('gap', (g) => { if (live.rec) live.rec.gaps.push(g.ts); });
+    session.on('ready', (r) => { store.log('live.start', { serial, engine: live.engine, control: live.control, maxSize, ...(native ? { deviceFootprint: 'ninguna (sin archivos subidos)' } : { scrcpyVersion: VERSION, serverSha256: r.jarSha256 }) }); emit('live:ready', { ...r, engine: live.engine }); });
     session.on('packet', (p) => { emit('live:packet', p); if (live.rec) this._recPacket(live, p); });
     session.on('close', () => {
       if (this.live !== live) return;
@@ -109,7 +113,7 @@ class Acquirer {
     if (l.rec) throw new Error('Ya hay una grabación en curso');
     const { device, foreground } = await this._meta(l.serial);
     const file = path.join(store.stagingDir(), `grabacion_${stamp()}.h264`);
-    const rec = { file, out: fs.createWriteStream(file), device, preflight: preflightInfo, started: false, frames: 0, firstPts: null, lastPts: 0, startedAt: new Date().toISOString(), timeline: [], size: { ...l.session.size } };
+    const rec = { file, out: fs.createWriteStream(file), device, preflight: preflightInfo, started: false, frames: 0, firstPts: null, lastPts: 0, startedAt: new Date().toISOString(), timeline: [], gaps: [], engine: l.engine, size: { ...l.session.size } };
     if (foreground) rec.timeline.push({ ts: rec.startedAt, component: foreground.component });
     rec.lastForeground = foreground;
     rec.poller = setInterval(async () => {
@@ -152,7 +156,7 @@ class Acquirer {
     if (rec.frames > 0) {
       result = await mgr.register({
         srcFile: rec.file, type: 'video', device: rec.device, foreground: rec.lastForeground, preflight: rec.preflight, timeline: rec.timeline,
-        sourcePath: 'scrcpy · flujo H.264 sin recodificar', recording: { durationSec, frames: rec.frames, fps: durationSec ? rec.frames / durationSec : 0, resolution: `${rec.size.w}×${rec.size.h}` },
+        sourcePath: rec.engine === 'native' ? 'adb exec-out screenrecord · flujo H.264 sin recodificar' : 'scrcpy · flujo H.264 sin recodificar', recording: { engine: rec.engine, gaps: rec.gaps, durationSec, frames: rec.frames, fps: durationSec ? rec.frames / durationSec : 0, resolution: `${rec.size.w}×${rec.size.h}` },
       });
       emit('evidence', result);
       await this._mux(result, durationSec ? rec.frames / durationSec : 30);

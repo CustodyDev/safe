@@ -125,14 +125,16 @@ $('#btnLive').onclick = async () => {
   if (!need()) return;
   live.reset();
   $('#btnLive').disabled = true; $('#recState').textContent = 'Conectando…';
-  const r = await act('act:liveStart', { serial: state.serial, maxSize: $('#optSize').value, control: $('#optControl').checked });
+  const r = await act('act:liveStart', { serial: state.serial, maxSize: $('#optSize').value, control: $('#optControl').checked && $('#optEngine').value === 'scrcpy', engine: $('#optEngine').value });
   if (r === null) { $('#btnLive').disabled = false; $('#recState').textContent = 'Sin conexión'; }
 };
 $('#btnLiveStop').onclick = () => api.call('act:liveStop');
-api.on('live:ready', (r) => { setConnected(true); toast(`Conectado: ${r.deviceName} (${r.w}×${r.h})`); $('#live').focus(); });
+api.on('live:ready', (r) => { setConnected(true); toast(`Conectado (${r.engine === 'native' ? 'ADB nativo' : 'scrcpy'}): ${r.deviceName}${r.w ? ` (${r.w}×${r.h})` : ''}`); $('#live').focus(); });
 api.on('live:closed', () => { setConnected(false); $('#btnRec').disabled = true; $('#btnRecStop').disabled = true; toast('Pantalla desconectada'); });
 api.on('live:packet', (p) => live.push(p));
 setInterval(() => { if (state.connected) $('#liveFps').textContent = live.fps + ' fps'; }, 1000);
+
+$('#optEngine').onchange = () => { const n = $('#optEngine').value === 'native'; $('#optControl').disabled = n; if (n) $('#optControl').checked = false; else $('#optControl').checked = true; };
 
 // Entrada: ratón/táctil, rueda, teclado
 const cv = $('#live'); let down = false; let pend = null;

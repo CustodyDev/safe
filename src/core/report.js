@@ -72,7 +72,8 @@ function generatePdf(file, rec, { thumbnail, caseInfo = {}, appVersion = '1.0.0'
       kv(doc, 'Duración', `${rec.recording.durationSec.toFixed(1)} s`);
       kv(doc, 'Fotogramas', `${rec.recording.frames} (≈ ${rec.recording.fps.toFixed(1)} fps medios, tasa variable)`);
       kv(doc, 'Resolución', rec.recording.resolution || '—');
-      kv(doc, 'Archivo único', 'Grabación continua sin segmentos');
+      kv(doc, 'Motor', rec.recording.engine === 'native' ? 'ADB nativo (screenrecord → PC). Sin archivos subidos al dispositivo.' : 'scrcpy-server (flujo H.264 → PC)');
+      kv(doc, 'Archivo único', rec.recording.gaps && rec.recording.gaps.length ? `Sí. ${rec.recording.gaps.length} reinicio(s) por el límite de 180 s de Android (hueco ≈ 1 s cada uno): ${rec.recording.gaps.join(', ')}` : 'Grabación continua sin cortes');
     }
 
     section(doc, 'Dispositivo de origen');

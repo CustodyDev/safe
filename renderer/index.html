@@ -90,6 +90,7 @@
           <h2>Sesión</h2>
           <div class="row"><button id="btnLive" class="primary">▶ Conectar pantalla</button><button id="btnLiveStop" class="danger" disabled>Desconectar</button></div>
           <div class="opts">
+            <label>Motor<select id="optEngine"><option value="scrcpy">scrcpy — interactivo (sube un servidor temporal al teléfono)</option><option value="native">ADB nativo — sin huella en el teléfono, solo observar</option></select></label>
             <label class="chk"><input type="checkbox" id="optControl" checked> Permitir interacción (ratón/teclado)</label>
             <label>Resolución<select id="optSize"><option value="0">Nativa (máxima calidad)</option><option value="1920">Máx. 1920 px</option><option value="1280" selected>Máx. 1280 px (más fluida)</option><option value="800">Máx. 800 px</option></select></label>
           </div>

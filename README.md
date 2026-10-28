@@ -12,6 +12,7 @@ blockchain de Bitcoin (OpenTimestamps)** y un **informe PDF comprimido**.
 |---|---|
 | **Copia de seguridad ADB** | `adb backup` (APK, almacenamiento compartido, OBB, apps del sistema) con progreso y cancelación. |
 | **Pantalla en vivo interactiva** | Flujo H.264 directo del dispositivo (scrcpy-server), **sin recodificar**, a hasta 60 fps y baja latencia. Se puede **tocar, deslizar, escribir y usar Atrás/Inicio/Recientes** desde el ratón y el teclado. |
+| **Dos motores de captura** | **scrcpy** (interactivo; sube un servidor temporal al teléfono) o **ADB nativo** (`screenrecord` → PC: **no sube nada al teléfono**, solo observar). En ambos el vídeo se guarda **en el PC**, nunca en el almacenamiento del dispositivo. |
 | **Grabación en un solo archivo** | Un único `.h264` continuo (sin el límite de 3 min de `screenrecord`), con hash, sello e informe; copia `.mp4` derivada si hay `ffmpeg`. |
 | **Explorador de archivos del teléfono** | Navega el sistema de archivos por ADB, marca ficheros/carpetas y **calcula su SHA-256 en el propio dispositivo antes de extraer**. Al extraer se recalcula y se **compara**; si no coincide se reintenta y queda constancia. |
 | **Verificar sello** | Por evidencia: comprueba que el hash del archivo = registro = `.sha256` = hash **dentro del `.ots`**, y consulta su estado en Bitcoin. |
@@ -96,7 +97,8 @@ Pruebas: `npm test`.
 
 - **`adb backup` está en desuso**: Android 12+ lo limita (las apps que lo excluyen no se copian) y
   exige confirmar en el dispositivo. Es una adquisición **lógica**, no un volcado físico.
-- **Huella en el dispositivo (pantalla en vivo):** scrcpy sube `scrcpy-server.jar` a `/data/local/tmp/` y lo borra al cerrar
+- **Modo ADB nativo:** `screenrecord` limita cada ejecución a 180 s; S.A.F.E. lo relanza y encadena todo en **el mismo archivo** (hueco ≈ 1 s por reinicio, registrado en el informe con su hora). No admite interacción. Al iniciar la grabación se reinicia `screenrecord` una vez para obtener un fotograma clave inmediato.
+- **Huella en el dispositivo (motor scrcpy):** scrcpy sube `scrcpy-server.jar` a `/data/local/tmp/` y lo borra al cerrar
   (`cleanup=true`). S.A.F.E. verifica su SHA-256 antes de subirlo y lo registra en la custodia. Si el protocolo de su
   procedimiento no admite ni ese rastro, use solo la copia ADB y el explorador.
 - **Interacción:** tocar la pantalla **cambia el estado del dispositivo**. El nº de acciones queda en la custodia; desmarque

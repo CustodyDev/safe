@@ -31,6 +31,10 @@ Cada vez que inicia una extracción, S.A.F.E. comprueba **Internet** y el **serv
 Para abrir el `.ab` use herramientas como *Android Backup Extractor* (`abe unpack`).
 
 ## 5. Pantalla en vivo (③)
+0. Elija el **motor**:
+   - **scrcpy** — interactivo, fluido; sube un servidor temporal a `/data/local/tmp/` (se borra al cerrar).
+   - **ADB nativo** — *no sube ningún archivo al teléfono* y no permite interacción (observación pura). Usa `screenrecord`; cada 180 s se reinicia
+     y se encadena en el mismo archivo (hueco ≈ 1 s, anotado en el informe). Preferible cuando el protocolo exige mínima huella.
 1. Elija la **resolución** (1280 px es la más fluida; «Nativa» da máxima calidad) y si permite **interacción**.
 2. **▶ Conectar pantalla**: aparece la pantalla del teléfono en directo (indicador de fps).
 3. **Interactuar** (si está permitido): clic = toque; arrastrar = deslizar; rueda = desplazar; escribir con el teclado

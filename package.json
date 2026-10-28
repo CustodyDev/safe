@@ -8,7 +8,7 @@
   "author": "S.A.F.E. Project",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/core.test.js test/ots.test.js test/scrcpy.test.js test/finalize.test.js",
+    "test": "node --test test/core.test.js test/ots.test.js test/scrcpy.test.js test/finalize.test.js test/native.test.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",

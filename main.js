@@ -93,7 +93,7 @@ function registerIpc() {
   handle('act:screenshot', async ({ serial, ack }) => acq.screenshot(serial, await gate('screenshot', ack)));
   handle('act:backup', async ({ serial, options, ack }) => acq.startBackup(serial, options, await gate('backup', ack)));
   handle('act:backupCancel', () => acq.cancelBackup());
-  handle('act:liveStart', async ({ serial, maxSize, control, ack }) => { await gate('live', ack); return acq.startLive(serial, { maxSize: Number(maxSize) || 0, control: control !== false }); });
+  handle('act:liveStart', async ({ serial, maxSize, control, engine, ack }) => { await gate('live', ack); return acq.startLive(serial, { maxSize: Number(maxSize) || 0, control: control !== false, engine }); });
   handle('act:liveStop', () => acq.stopLive());
   handle('act:recStart', async ({ ack }) => acq.startRecording(await gate('record', ack)));
   handle('act:recStop', () => acq.stopRecording());
