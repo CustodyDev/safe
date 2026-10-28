@@ -53,7 +53,11 @@ class EvidenceManager {
       device: p.device || null, foreground: p.foreground || null, timeline: p.timeline || null,
       preflight: p.preflight ? { checkedAt: p.preflight.checkedAt, online: p.preflight.online, timestampService: p.preflight.timestampService } : null,
       parent: p.parent || null, ots: { status: 'not-stamped' },
+      // SHA-256 calculado en el dispositivo ANTES de extraer, y resultado de la comparación
+      transfer: p.deviceSha256 ? { deviceSha256: p.deviceSha256, deviceHashedAt: p.deviceHashedAt || null, match: p.deviceSha256 === sha256 } : null,
+      recording: p.recording || null,
     };
+    if (rec.transfer && !rec.transfer.match) this.store.log('evidence.transfer.mismatch', { id, deviceSha256: p.deviceSha256, localSha256: sha256 });
     this.store.log('evidence.hash', { id, fileName, sha256, size: stat.size, type: p.type });
 
     await this._stamp(rec, dir, p.preflight);
@@ -123,6 +127,33 @@ class EvidenceManager {
       results.push({ id: rec.id, from: before, to: rec.ots.status });
     }
     return results;
+  }
+
+  /**
+   * Comprueba que el hash sellado en el .ots es el mismo del caso:
+   * archivo (recalculado) = registro = .sha256 = hash dentro del .ots, y estado en Bitcoin.
+   */
+  async verifyOne(id, { online = true } = {}) {
+    const rec = this.store.list().find((e) => e.id === id);
+    if (!rec) throw new Error('Evidencia no encontrada');
+    const dir = path.join(this.store.dir, 'evidence', id);
+    const file = path.join(dir, rec.fileName);
+    const fileSha = await sha256File(file).catch(() => null);
+    const shaFile = fs.existsSync(file + '.sha256') ? fs.readFileSync(file + '.sha256', 'utf8').slice(0, 64) : null;
+    const out = { id, fileName: rec.fileName, fileSha256: fileSha, recordSha256: rec.sha256, sha256File: shaFile, otsSha256: null, attestations: [], bitcoin: null };
+    if (rec.ots.file && fs.existsSync(path.join(dir, rec.ots.file))) {
+      const bytes = fs.readFileSync(path.join(dir, rec.ots.file));
+      const info = ots.inspect(bytes);
+      out.otsSha256 = info.digest; out.attestations = info.attestations;
+      if (online) { try { out.bitcoin = await ots.verify(bytes, rec.sha256); } catch (e) { out.bitcoin = { status: 'pending', error: e.message }; } }
+    }
+    out.hasOts = out.otsSha256 !== null;
+    const same = [out.recordSha256, out.sha256File, ...(out.hasOts ? [out.otsSha256] : [])].every((h) => h === fileSha);
+    out.fileMatchesRecord = fileSha === rec.sha256;
+    out.otsMatchesCase = out.otsSha256 !== null && out.otsSha256 === fileSha;
+    out.allMatch = same;
+    this.store.log('verify.ots', { id, allMatch: same, bitcoin: out.bitcoin && out.bitcoin.status });
+    return out;
   }
 
   /** Recalcula el SHA-256 de cada evidencia y lo compara con el registrado. */

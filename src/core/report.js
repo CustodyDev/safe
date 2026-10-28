@@ -58,6 +58,23 @@ function generatePdf(file, rec, { thumbnail, caseInfo = {}, appVersion = '1.0.0'
     kv(doc, 'Fecha de extracción', `${rec.extractedAt} (UTC)`);
     kv(doc, 'Hora local', new Date(rec.extractedAt).toString());
 
+    if (rec.transfer) {
+      section(doc, 'Verificación en origen (antes de extraer)');
+      doc.font('Courier').fontSize(9).fillColor(C.ink).text(rec.transfer.deviceSha256.slice(0, 32), 185).text(rec.transfer.deviceSha256.slice(32), 185);
+      doc.moveDown(0.3);
+      kv(doc, 'SHA-256 en dispositivo', `calculado con sha256sum el ${rec.transfer.deviceHashedAt || '—'}`);
+      doc.font('Helvetica-Bold').fontSize(10).fillColor(rec.transfer.match ? C.accent : '#b91c1c')
+        .text(rec.transfer.match ? 'COINCIDE con el hash del archivo extraído: transferencia íntegra.' : 'NO COINCIDE con el archivo extraído: revisar la transferencia.', 185);
+      doc.moveDown(0.5);
+    }
+    if (rec.recording) {
+      section(doc, 'Datos de la grabación');
+      kv(doc, 'Duración', `${rec.recording.durationSec.toFixed(1)} s`);
+      kv(doc, 'Fotogramas', `${rec.recording.frames} (≈ ${rec.recording.fps.toFixed(1)} fps medios, tasa variable)`);
+      kv(doc, 'Resolución', rec.recording.resolution || '—');
+      kv(doc, 'Archivo único', 'Grabación continua sin segmentos');
+    }
+
     section(doc, 'Dispositivo de origen');
     const d = rec.device || {};
     if (d.model || d.serial) {

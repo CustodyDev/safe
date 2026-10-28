@@ -44,8 +44,8 @@ button.ghost{background:none}
 .progress{height:8px;background:#0a1324;border-radius:99px;overflow:hidden;margin:14px 0 6px}.progress div{height:100%;width:0;background:linear-gradient(90deg,var(--acc2),var(--acc));transition:width .3s}
 .progress.busy div{width:40%;animation:slide 1.2s infinite ease-in-out}
 @keyframes slide{0%{margin-left:-40%}100%{margin-left:100%}}
-.phone{background:#000;border:2px solid var(--line);border-radius:28px;padding:12px;position:relative;width:392px}
-.phone canvas{display:block;width:100%;height:auto;border-radius:16px;background:#050810;aspect-ratio:9/19}
+.phone{background:#000;border:2px solid var(--line);border-radius:28px;padding:12px;position:relative;width:fit-content}
+.phone canvas{display:block;height:calc(100vh - 270px);width:auto;max-width:44vw;border-radius:16px;background:#050810}
 #liveEmpty{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute)}
 .kpi{display:flex;justify-content:space-between;border-top:1px solid var(--line);padding:10px 0}.kpi span{color:var(--mute)}
 .mono,code,pre{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.kpi .mono{font-size:12px;text-align:right}
@@ -67,3 +67,11 @@ td.fn{font-weight:600;word-break:break-all}td.h{font-family:ui-monospace,Menlo,C
 .modal{position:fixed;inset:0;background:#000a;display:grid;place-items:center;z-index:50}.modal[hidden]{display:none}
 .dialog{background:var(--panel);border:1px solid var(--warn);border-radius:12px;padding:22px;max-width:520px;width:92%}.dialog h3{margin:0 0 8px;color:var(--warn)}.dialog p{line-height:1.5}
 td:first-child{white-space:nowrap}
+.keys{display:flex;gap:6px;justify-content:center;margin-top:10px}.keys button{padding:7px 12px}
+#live{cursor:pointer;touch-action:none;outline:none}#live:focus{box-shadow:0 0 0 2px var(--acc)}
+#fTable td.name{cursor:pointer;font-weight:600;word-break:break-all}#fTable td.name.dir{color:var(--acc)}
+#fTable td.sha{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:11px;color:var(--ok);word-break:break-all;max-width:300px}
+#fTable td.sha.err{color:var(--bad)}
+#fTable input[type=checkbox]{width:auto;margin:0}
+.tablecard .urlbar{border-bottom:1px solid var(--line)}
+.ok{color:var(--ok)}.bad{color:var(--bad)}

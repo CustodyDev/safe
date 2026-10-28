@@ -31,24 +31,30 @@ Cada vez que inicia una extracción, S.A.F.E. comprueba **Internet** y el **serv
 Para abrir el `.ab` use herramientas como *Android Backup Extractor* (`abe unpack`).
 
 ## 5. Pantalla en vivo (③)
-- **● Iniciar grabación**: muestra la pantalla en directo y graba. Cada ~3 min se cierra un segmento (evidencia propia)
-  y arranca otro automáticamente. **■ Detener** finaliza, hashea, sella y genera el informe de cada segmento.
-- **📷 Captura de pantalla**: PNG instantáneo con miniatura en el informe.
-- **App en primer plano**: muestra el paquete/actividad con foco (`dumpsys window`). El informe de capturas lo incluye y el de vídeos
-  añade la **cronología** de apps durante la grabación.
+1. Elija la **resolución** (1280 px es la más fluida; «Nativa» da máxima calidad) y si permite **interacción**.
+2. **▶ Conectar pantalla**: aparece la pantalla del teléfono en directo (indicador de fps).
+3. **Interactuar** (si está permitido): clic = toque; arrastrar = deslizar; rueda = desplazar; escribir con el teclado
+   (la pantalla debe tener el foco); Esc = Atrás; botones ◀ ● ■ Vol± ⏻ bajo el teléfono.
+4. **● Iniciar grabación / ■ Detener y sellar**: graba **un único archivo continuo** (sin cortes de 3 min). Al detener se
+   calcula el hash, se sella y se genera el informe (duración, fotogramas, resolución y cronología de apps en primer plano).
+5. **📷 Captura**: PNG instantáneo con miniatura en el informe.
 
-## 6. Archivos multimedia (④)
-1. Escriba la ruta (o use los atajos DCIM, Pictures, Download, Movies, WhatsApp).
-2. **Extraer y registrar**: se copian los archivos con sus fechas originales y **cada uno** genera su evidencia
-   (nombre original intacto, SHA-256, sello, informe con miniatura si es imagen).
+> La interacción modifica el dispositivo; queda registrada (nº de acciones) en la cadena de custodia.
+> Si la imagen se retrasa, baje la resolución; S.A.F.E. descarta fotogramas atrasados y pide uno clave para no acumular latencia.
 
-> Carpetas con miles de archivos generan miles de informes: acote la ruta.
+## 6. Explorador de archivos (④)
+1. Escriba una ruta o use los atajos (`/sdcard`, DCIM, Download…) y navegue con un clic en las carpetas (↑ sube).
+2. **Marque** ficheros y/o carpetas.
+3. **🔎 Calcular SHA-256 en el dispositivo**: el teléfono calcula el hash de cada fichero (carpetas incluidas) **sin copiarlo**;
+   aparece en verde en la tabla. Este es el hash «de origen».
+4. **⬇ Extraer seleccionados (con verificación)**: por cada fichero se confirma que no cambió (tamaño y fecha) o se
+   recalcula, se copia conservando nombre y fecha, se recalcula el SHA-256 del archivo recibido y se **compara**.
+   Si difiere, se reintenta una vez y queda registrado. Cada fichero es una evidencia (nombre original, sello, informe PDF
+   con la sección «Verificación en origen»).
 
-## 7. Navegador interno (⑤)
-1. Escriba una URL y pulse Intro (sesión aislada, sin permisos de cámara/ubicación).
-2. **Capturar y sellar** guarda 2 evidencias: la **captura PNG** y la **página archivada (.mhtml)**, con URL y título.
+> Sin root solo se leen rutas de almacenamiento compartido (`/sdcard/...`). Carpetas muy grandes (>5000 ficheros) deben acotarse.
 
-## 8. Evidencias (⑥)
+## 7. Evidencias (⑤)
 Tabla con ID, **nombre de archivo**, tipo, SHA-256, fecha UTC y estado del sello:
 
 | Estado | Significado |
@@ -61,18 +67,32 @@ Tabla con ID, **nombre de archivo**, tipo, SHA-256, fecha UTC y estado del sello
   (Se vuelve a hacer la verificación previa.)
 - **Verificar integridad**: recalcula el SHA-256 de todos los originales y lo compara con el registrado.
 - **Informe** abre el PDF; **Carpeta** muestra la evidencia en el explorador.
+- **Verificar sello**: ver §9.
 
-## 9. Cadena de custodia (⑦)
-Lista las operaciones (apertura, verificaciones previas, hashes, sellos…). **Verificar cadena de hashes** detecta
+## 8. Cadena de custodia (⑥)
+Lista las operaciones (apertura, verificaciones previas, hashes, sellos, sesiones en vivo…). **Verificar cadena de hashes** detecta
 si el registro fue alterado.
 
-## 10. Verificación independiente (por un tercero)
-1. Calcule el SHA-256 del archivo original (`sha256sum archivo`) y compárelo con el `.sha256` y el informe.
-2. Verifique el sello: instale el cliente oficial (`pip install opentimestamps-client`) y ejecute con el hash:
-   `ots verify archivo.ots` (con el archivo original junto a un `.ots` que se llame `<archivo>.ots`).
-   Es válido aunque S.A.F.E. no esté instalado.
+## 9. ¿Cómo compruebo que el SHA-256 sellado en OpenTimestamps es el de mi caso?
+**Dentro de S.A.F.E.** — *Evidencias → Verificar sello* en la fila. Muestra cuatro valores que deben ser idénticos:
+1. SHA-256 del archivo **recalculado ahora**,
+2. el del registro del caso (`evidence.json`),
+3. el del archivo `.sha256`,
+4. el hash **contenido dentro del `.ots`** (leído del propio fichero, sin red),
 
-## 11. Buenas prácticas
+y el estado en Bitcoin (pendiente / confirmado con nº de bloque y fecha).
+
+**De forma independiente (sin S.A.F.E.)**
+1. `sha256sum IMG_2041.jpg` (Windows: `certutil -hashfile IMG_2041.jpg SHA256`) → debe coincidir con el informe PDF y el `.sha256`.
+2. Con el cliente oficial (`pip install opentimestamps-client`), deje el `.ots` junto al original con el nombre
+   `IMG_2041.jpg.ots` y ejecute `ots verify IMG_2041.jpg.ots`. Si el hash no coincide, falla con *«File does not match original!»*.
+   Con `ots info IMG_2041.jpg.ots` se ve el hash sellado y la atestación (`PendingAttestation` o `BitcoinBlockHeaderAttestation`).
+3. Web: arrastre el `.ots` y el original en <https://opentimestamps.org> .
+4. Bitcoin: un sello «Confirmado» indica el bloque; verifíquelo en cualquier explorador (la fecha del bloque es la fecha probada).
+
+Un sello nuevo estará «pendiente» hasta que el calendario lo ancle en Bitcoin (horas). Use *Sellar / actualizar pruebas OTS* después.
+
+## 10. Buenas prácticas
 - Documente la autorización y trabaje sobre una **copia** de la carpeta del caso para análisis.
 - Mantenga el dispositivo cargado, en modo avión si procede, y sin bloqueo de pantalla durante la extracción.
 - Haga el sellado definitivo (**Confirmado**) y conserve `.ots`, `.sha256`, PDF y `custody.log.jsonl` junto al original.

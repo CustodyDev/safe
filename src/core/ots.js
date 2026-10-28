@@ -40,4 +40,17 @@ async function verify(otsBytes, sha256hex) {
   }
 }
 
-module.exports = { stampHash, upgrade, verify };
+/** Lee un .ots SIN red: devuelve el hash que sella y las atestaciones que contiene. */
+function inspect(otsBytes) {
+  const d = OpenTimestamps.DetachedTimestampFile.deserialize(Buffer.from(otsBytes));
+  const digest = Buffer.from(d.fileDigest()).toString('hex');
+  const atts = [];
+  d.timestamp.allAttestations().forEach((a) => {
+    if (a.height !== undefined) atts.push({ type: 'bitcoin', height: a.height });
+    else if (a.uri !== undefined) atts.push({ type: 'pending', uri: Buffer.from(a.uri).toString('utf8') });
+    else atts.push({ type: 'unknown' });
+  });
+  return { digest, attestations: atts };
+}
+
+module.exports = { stampHash, upgrade, verify, inspect };

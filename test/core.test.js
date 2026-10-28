@@ -81,29 +81,65 @@ test('sin conexión: la evidencia se registra marcada como no sellada y se sella
   assert.strictEqual(s.list()[0].ots.status, 'pending');
 });
 
-test('copia ADB y extracción multimedia conservan el nombre original', async () => {
+test('copia ADB conserva un nombre descriptivo', async () => {
   const s = CaseStore.create(tmp(), { caseId: 'T5' });
   const mgr = new EvidenceManager(s, { stampFn: fakeStamp });
   const acq = new Acquirer({ adb: adbFake(), store: s, mgr, emit() {} });
-  const pf = await runPreflight(s, 'x', online);
-  const bk = await acq.startBackup('FAKE123', { apk: true, shared: true }, pf);
+  const bk = await acq.startBackup('FAKE123', { apk: true, shared: true }, await runPreflight(s, 'x', online));
   assert.match(bk.fileName, /^backup_Pixel_Fake_.*\.ab$/);
-  const media = await acq.pullMedia('FAKE123', '/sdcard/DCIM/Camera', pf);
-  assert.deepStrictEqual(media.map((m) => m.fileName).sort(), ['IMG_2041.jpg', 'VID_0007.mp4']);
-  assert.strictEqual(media[0].sourcePath.startsWith('/sdcard/DCIM/Camera/'), true);
 });
 
-test('grabación de pantalla genera evidencia de vídeo con cronología de app', async () => {
-  const s = CaseStore.create(tmp(), { caseId: 'T6' });
+test('explorador: lista directorios y expande carpetas con nombres con espacios y comillas', async () => {
+  const adb = adbFake();
+  const root = await adb.listDir('FAKE123', '/sdcard');
+  assert.deepStrictEqual(root.map((e) => e.name), ['DCIM', 'My Docs']);
+  assert.deepStrictEqual((await adb.expand('FAKE123', '/sdcard/DCIM')).sort(), ['/sdcard/DCIM/Camera/IMG_2041.jpg', '/sdcard/DCIM/Camera/VID_0007.mp4']);
+  assert.deepStrictEqual(await adb.expand('FAKE123', "/sdcard/My Docs/it's.txt"), ["/sdcard/My Docs/it's.txt"]);
+  await assert.rejects(adb.listDir('FAKE123', '/data'), /Permission denied/);
+});
+
+test('SHA-256 en el dispositivo antes de extraer y comparación tras la transferencia', async () => {
+  const s = CaseStore.create(tmp(), { caseId: 'T7' });
   const mgr = new EvidenceManager(s, { stampFn: fakeStamp });
-  const events = [];
-  const acq = new Acquirer({ adb: adbFake(), store: s, mgr, emit: (c, d) => events.push(c) });
-  process.env.SAFE_FFMPEG = 'ffmpeg-no-existe';
-  await acq.startRecording('FAKE123', await runPreflight(s, 'record', online));
-  await new Promise((r) => setTimeout(r, 700));
-  acq.stopRecording();
-  await new Promise((r) => { const t = setInterval(() => { if (events.includes('recording') && !acq.rec) { clearInterval(t); r(); } }, 50); });
-  const vids = s.list().filter((e) => e.type === 'video');
-  assert.ok(vids.length >= 1);
-  assert.strictEqual(vids[0].timeline[0].component, 'com.whatsapp/com.whatsapp.HomeActivity');
+  const acq = new Acquirer({ adb: adbFake(), store: s, mgr, emit() {} });
+  const pf = await runPreflight(s, 'x', online);
+  const hashes = await acq.hashRemote('FAKE123', ['/sdcard/DCIM/Camera']);
+  assert.strictEqual(hashes.length, 2); assert.ok(hashes.every((h) => /^[0-9a-f]{64}$/.test(h.sha256)));
+  const recs = await acq.extractFiles('FAKE123', ['/sdcard/DCIM/Camera'], pf);
+  assert.deepStrictEqual(recs.map((m) => m.fileName).sort(), ['IMG_2041.jpg', 'VID_0007.mp4']);
+  for (const r of recs) {
+    assert.strictEqual(r.transfer.match, true);
+    assert.strictEqual(r.transfer.deviceSha256, hashes.find((h) => h.path === r.sourcePath).sha256);
+    assert.strictEqual(r.sha256, r.transfer.deviceSha256);
+  }
+});
+
+test('si la transferencia se corrompe se reintenta y queda constancia', async () => {
+  const s = CaseStore.create(tmp(), { caseId: 'T8' });
+  const mgr = new EvidenceManager(s, { stampFn: fakeStamp });
+  process.env.FAKE_CORRUPT_ONCE = path.join(tmp(), 'flag');
+  const acq = new Acquirer({ adb: adbFake(), store: s, mgr, emit() {} });
+  const [r] = await acq.extractFiles('FAKE123', ['/sdcard/DCIM/Camera/VID_0007.mp4'], await runPreflight(s, 'x', online));
+  delete process.env.FAKE_CORRUPT_ONCE;
+  assert.strictEqual(r.transfer.match, true);
+  assert.ok(fs.readFileSync(s.custodyFile, 'utf8').includes('pull.retry'));
+});
+
+test('verifyOne: el hash del .ots coincide con el del caso y detecta manipulación', async () => {
+  const ots = require('../src/core/ots');
+  const s = CaseStore.create(tmp(), { caseId: 'T9' });
+  const OTS = require('opentimestamps');
+  const mgr = new EvidenceManager(s, { stampFn: async (hex) => {
+    const d = OTS.DetachedTimestampFile.fromHash(new OTS.Ops.OpSHA256(), Buffer.from(hex, 'hex'));
+    d.timestamp.attestations.push(new OTS.Notary.PendingAttestation('https://a.pool.example.org'));
+    return Buffer.from(d.serializeToBytes());
+  } });
+  const acq = new Acquirer({ adb: adbFake(), store: s, mgr, emit() {} });
+  const rec = await acq.screenshot('FAKE123', await runPreflight(s, 'x', online));
+  const v = await mgr.verifyOne(rec.id, { online: false });
+  assert.strictEqual(v.allMatch, true); assert.strictEqual(v.otsSha256, rec.sha256);
+  assert.ok(ots.inspect(fs.readFileSync(path.join(s.dir, 'evidence', rec.id, rec.ots.file))).digest === rec.sha256);
+  const f = path.join(s.dir, 'evidence', rec.id, rec.fileName);
+  fs.chmodSync(f, 0o644); fs.appendFileSync(f, 'x');
+  assert.strictEqual((await mgr.verifyOne(rec.id, { online: false })).allMatch, false);
 });

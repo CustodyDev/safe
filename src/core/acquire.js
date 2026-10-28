@@ -3,22 +3,18 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { safeName } = require('./casestore');
+const { sha256File } = require('./hash');
+const { ScrcpySession, VERSION, ACTION, msgTouch, msgKey, msgText, msgScroll } = require('./scrcpy');
 
 const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
-
-function walk(dir) {
-  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
-    const p = path.join(dir, e.name);
-    return e.isDirectory() ? walk(p) : [p];
-  });
-}
 
 /** Adquisiciones contra el dispositivo. ctx = {adb, store, mgr, emit(channel, data)} */
 class Acquirer {
   constructor(ctx) {
     this.ctx = ctx;
     this.backup = null;
-    this.rec = null;
+    this.live = null;
+    this.hashCache = new Map();
   }
 
   async _meta(serial) {
@@ -72,112 +68,185 @@ class Acquirer {
 
   cancelBackup() { if (this.backup) { this.backup.cancelled = true; this.backup.child.kill(); } }
 
-  /** Graba la pantalla en segmentos de ≤180 s, emitiendo el flujo H.264 para la vista en vivo. */
-  async startRecording(serial, preflight, { bitRate } = {}) {
+  // ---------- pantalla en vivo, control y grabación en un único archivo ----------
+
+  async startLive(serial, { maxSize = 0, control = true } = {}) {
     const { adb, store, emit } = this.ctx;
-    if (this.rec) throw new Error('Ya hay una grabación en curso');
-    const { device, foreground } = await this._meta(serial);
-    const r = { serial, device, preflight, stopping: false, seg: 0, done: [], timeline: [], child: null, poller: null, bitRate };
-    this.rec = r;
-    if (foreground) r.timeline.push({ ts: new Date().toISOString(), component: foreground.component });
-    r.poller = setInterval(async () => {
-      if (r.polling) return;
-      r.polling = true;
-      try {
-        const fg = await adb.foreground(serial);
-        const last = r.timeline[r.timeline.length - 1];
-        if (!last || last.component !== fg.component) r.timeline.push({ ts: new Date().toISOString(), component: fg.component });
-        r.lastForeground = fg;
-      } catch (_) { /* sin foco momentáneo */ } finally { r.polling = false; }
-    }, 3000);
-    store.log('record.start', { serial });
-    this._segment(r);
-    emit('recording', { active: true, segment: 1 });
-  }
-
-  _segment(r) {
-    const { adb, store, mgr, emit } = this.ctx;
-    r.seg += 1;
-    const file = path.join(store.stagingDir(), `grabacion_${stamp()}_seg${String(r.seg).padStart(2, '0')}.h264`);
-    const out = fs.createWriteStream(file);
-    const child = adb.screenrecordProcess(r.serial, { bitRate: r.bitRate });
-    r.child = child;
-    const startedAt = new Date().toISOString();
-    child.stdout.on('data', (d) => { out.write(d); emit('rec:chunk', d); });
-    child.stdout.on('end', () => emit('rec:chunk-end', { segment: r.seg }));
-    child.on('error', (e) => emit('error', { message: e.message }));
-    child.on('close', async () => {
-      out.end();
-      await new Promise((res) => out.on('finish', res));
-      const size = fs.existsSync(file) ? fs.statSync(file).size : 0;
-      const timeline = r.timeline.filter((t) => t.ts >= startedAt || t === r.timeline[0]);
-      if (!r.stopping) this._segment(r); // reanuda de inmediato tras el límite de 180 s
-      if (size > 0) {
-        try {
-          const rec = await mgr.register({ srcFile: file, type: 'video', device: r.device, foreground: r.lastForeground, preflight: r.preflight, timeline, sourcePath: `screenrecord (segmento ${r.seg})` });
-          r.done.push(rec);
-          emit('evidence', rec);
-          await this._mux(rec, r);
-        } catch (e) { emit('error', { message: e.message }); }
-      } else if (fs.existsSync(file)) fs.unlinkSync(file);
-      if (r.stopping && r.child === child) { this._finishStop(r); }
+    if (this.live) throw new Error('Ya hay una sesión en vivo');
+    const session = new ScrcpySession(adb, serial, { maxSize, control });
+    const live = { session, serial, control, inputs: 0, rec: null };
+    this.live = live;
+    session.on('ready', (r) => { store.log('live.start', { serial, control, maxSize, scrcpyVersion: VERSION, serverSha256: r.jarSha256 }); emit('live:ready', r); });
+    session.on('packet', (p) => { emit('live:packet', p); if (live.rec) this._recPacket(live, p); });
+    session.on('close', () => {
+      if (this.live !== live) return;
+      if (live.rec) this.stopRecording().catch((e) => emit('error', { message: e.message }));
+      this.live = null;
+      store.log('live.stop', { inputs: live.inputs });
+      emit('live:closed', {});
     });
+    try { await session.start(); } catch (e) { this.live = null; throw e; }
   }
 
-  _finishStop(r) {
-    if (this.rec !== r) return;
-    this.rec = null;
-    this.ctx.store.log('record.stop', { segments: r.done.map((d) => d.id) });
-    this.ctx.emit('recording', { active: false, evidence: r.done.map((d) => d.id) });
+  stopLive() { if (this.live) return this.live.session.stop(); return undefined; }
+
+  /** Entrada del usuario sobre la pantalla en vivo (táctil, teclas, texto, scroll). */
+  control(msg) {
+    const l = this.live;
+    if (!l || !l.control) return;
+    const { w, h } = l.session.size;
+    if (msg.t === 'touch') { l.session.send(msgTouch(msg.action, msg.x, msg.y, msg.w || w, msg.h || h)); if (msg.action === ACTION.DOWN) l.inputs++; }
+    else if (msg.t === 'key') { l.session.send(msgKey(0, msg.code)); l.session.send(msgKey(1, msg.code)); l.inputs++; }
+    else if (msg.t === 'keyframe') l.session.requestKeyframe();
+    else if (msg.t === 'text') { l.session.send(msgText(msg.text)); l.inputs++; }
+    else if (msg.t === 'scroll') { l.session.send(msgScroll(msg.x, msg.y, msg.w || w, msg.h || h, msg.dx || 0, msg.dy || 0)); l.inputs++; }
+  }
+
+  async startRecording(preflightInfo) {
+    const { adb, store, emit } = this.ctx;
+    const l = this.live;
+    if (!l) throw new Error('Conecte primero la pantalla en vivo');
+    if (l.rec) throw new Error('Ya hay una grabación en curso');
+    const { device, foreground } = await this._meta(l.serial);
+    const file = path.join(store.stagingDir(), `grabacion_${stamp()}.h264`);
+    const rec = { file, out: fs.createWriteStream(file), device, preflight: preflightInfo, started: false, frames: 0, firstPts: null, lastPts: 0, startedAt: new Date().toISOString(), timeline: [], size: { ...l.session.size } };
+    if (foreground) rec.timeline.push({ ts: rec.startedAt, component: foreground.component });
+    rec.lastForeground = foreground;
+    rec.poller = setInterval(async () => {
+      if (rec.polling) return;
+      rec.polling = true;
+      try {
+        const fg = await adb.foreground(l.serial);
+        const last = rec.timeline[rec.timeline.length - 1];
+        if (!last || last.component !== fg.component) rec.timeline.push({ ts: new Date().toISOString(), component: fg.component });
+        rec.lastForeground = fg;
+      } catch (_) { /* sin foco momentáneo */ } finally { rec.polling = false; }
+    }, 3000);
+    l.rec = rec;
+    store.log('record.start', { serial: l.serial, file: path.basename(file) });
+    if (l.session.lastConfig) rec.out.write(l.session.lastConfig); // SPS/PPS al inicio del archivo
+    l.session.requestKeyframe();
+    emit('recording', { active: true });
+  }
+
+  _recPacket(live, p) {
+    const rec = live.rec;
+    if (p.config) { rec.out.write(p.data); return; }
+    if (!rec.started) { if (!p.key) return; rec.started = true; rec.size = { ...live.session.size }; }
+    if (rec.firstPts === null) rec.firstPts = p.ptsUs;
+    rec.lastPts = p.ptsUs; rec.frames++;
+    rec.out.write(p.data);
+  }
+
+  async stopRecording() {
+    const { store, mgr, emit } = this.ctx;
+    const l = this.live;
+    if (!l || !l.rec) return null;
+    const rec = l.rec; l.rec = null;
+    clearInterval(rec.poller);
+    await new Promise((res) => rec.out.end(res));
+    emit('recording', { active: false, finalizing: true });
+    const durationSec = rec.frames > 1 ? (rec.lastPts - rec.firstPts) / 1e6 : 0;
+    store.log('record.stop', { frames: rec.frames, durationSec });
+    let result = null;
+    if (rec.frames > 0) {
+      result = await mgr.register({
+        srcFile: rec.file, type: 'video', device: rec.device, foreground: rec.lastForeground, preflight: rec.preflight, timeline: rec.timeline,
+        sourcePath: 'scrcpy · flujo H.264 sin recodificar', recording: { durationSec, frames: rec.frames, fps: durationSec ? rec.frames / durationSec : 0, resolution: `${rec.size.w}×${rec.size.h}` },
+      });
+      emit('evidence', result);
+      await this._mux(result, durationSec ? rec.frames / durationSec : 30);
+    } else if (fs.existsSync(rec.file)) fs.unlinkSync(rec.file);
+    emit('recording', { active: false });
+    return result;
   }
 
   /** Copia derivada MP4 si hay ffmpeg (el original sigue siendo el .h264). */
-  _mux(rec) {
+  _mux(rec, fps) {
     const { store, mgr, emit } = this.ctx;
     return new Promise((resolve) => {
       const src = path.join(store.dir, rec.relPath);
       const dst = path.join(store.stagingDir(), rec.fileName.replace(/\.h264$/, '.mp4'));
-      const ff = spawn(process.env.SAFE_FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-r', '30', '-f', 'h264', '-i', src, '-c', 'copy', dst]);
+      const ff = spawn(process.env.SAFE_FFMPEG || 'ffmpeg', ['-y', '-loglevel', 'error', '-r', fps.toFixed(3), '-f', 'h264', '-i', src, '-c', 'copy', dst]);
       ff.on('error', () => resolve());
       ff.on('close', async (code) => {
         if (code === 0 && fs.existsSync(dst)) {
-          try { emit('evidence', await mgr.register({ srcFile: dst, type: 'derived', device: rec.device, parent: rec.id, preflight: rec.preflight, sourcePath: `Derivado de ${rec.id}` })); } catch (_) { /* opcional */ }
+          try { emit('evidence', await mgr.register({ srcFile: dst, type: 'derived', device: rec.device, parent: rec.id, preflight: rec.preflight, sourcePath: `Derivado de ${rec.id} (copia de visualización)` })); } catch (_) { /* opcional */ }
         }
         resolve();
       });
     });
   }
 
-  stopRecording() {
-    const r = this.rec;
-    if (!r) return;
-    r.stopping = true;
-    clearInterval(r.poller);
-    r.child.kill();
-  }
+  // ---------- explorador de archivos del dispositivo ----------
 
-  /** Extrae un fichero/carpeta del dispositivo conservando nombres y fechas. */
-  async pullMedia(serial, remote, preflight) {
-    const { adb, store, mgr, emit } = this.ctx;
-    const { device } = await this._meta(serial);
-    const stage = store.stagingDir(`pull_${stamp()}`);
-    store.log('pull.start', { serial, remote });
-    emit('progress', { kind: 'pull', message: `Extrayendo ${remote}…` });
-    await adb.pull(serial, remote, stage);
-    const files = walk(stage);
-    if (!files.length) throw new Error('No se extrajo ningún archivo (¿ruta inexistente o sin permisos?)');
-    const base = path.join(stage, path.basename(remote.replace(/\/+$/, '')));
+  listDir(serial, dir) { return this.ctx.adb.listDir(serial, dir); }
+
+  /** Calcula el SHA-256 EN el dispositivo de cada ruta (expande carpetas). No extrae nada. */
+  async hashRemote(serial, paths) {
+    const { adb, store, emit } = this.ctx;
+    const files = [];
+    for (const p of paths) files.push(...await adb.expand(serial, p));
     const out = [];
     for (const [i, f] of files.entries()) {
-      const rel = path.relative(base, f);
-      const sourcePath = (rel && !rel.startsWith('..') ? remote.replace(/\/+$/, '') + '/' + rel.split(path.sep).join('/') : remote);
-      emit('progress', { kind: 'pull', message: `Sellando ${i + 1}/${files.length}: ${path.basename(f)}` });
-      const rec = await mgr.register({ srcFile: f, fileName: path.basename(f), type: 'media', device, preflight, sourcePath, mtime: fs.statSync(f).mtime.toISOString() });
-      out.push(rec);
-      emit('evidence', rec);
+      emit('progress', { kind: 'fs', message: `SHA-256 en dispositivo ${i + 1}/${files.length}: ${path.basename(f)}` });
+      try {
+        const st = await adb.stat(serial, f);
+        const sha256 = await adb.sha256Remote(serial, f);
+        const item = { path: f, ...st, sha256, hashedAt: new Date().toISOString() };
+        this.hashCache.set(serial + '\0' + f, item);
+        out.push(item);
+      } catch (e) { out.push({ path: f, error: e.message }); }
+    }
+    store.log('fs.hash', { serial, count: out.length, errors: out.filter((o) => o.error).length });
+    return out;
+  }
+
+  /**
+   * Extrae ficheros/carpetas. Para cada fichero: SHA-256 en el dispositivo (reutiliza el ya calculado si
+   * tamaño y fecha no cambiaron) → adb pull → SHA-256 local → comparación. Conserva nombre y fecha.
+   */
+  async extractFiles(serial, paths, preflight) {
+    const { adb, store, mgr, emit } = this.ctx;
+    const { device } = await this._meta(serial);
+    const files = [];
+    for (const p of paths) files.push(...await adb.expand(serial, p));
+    if (!files.length) throw new Error('No hay ficheros en la selección');
+    store.log('pull.start', { serial, paths, count: files.length });
+    const stage = store.stagingDir(`pull_${stamp()}`);
+    const out = [];
+    for (const [i, f] of files.entries()) {
+      const name = path.basename(f);
+      try {
+        emit('progress', { kind: 'fs', message: `Verificando en origen ${i + 1}/${files.length}: ${name}` });
+        const st = await adb.stat(serial, f);
+        let h = this.hashCache.get(serial + '\0' + f);
+        if (!h || h.size !== st.size || h.mtime !== st.mtime) {
+          h = { path: f, ...st, sha256: await adb.sha256Remote(serial, f), hashedAt: new Date().toISOString() };
+        }
+        const dir = path.join(stage, String(i)); fs.mkdirSync(dir);
+        const local = path.join(dir, name);
+        let sha = null;
+        for (let attempt = 0; attempt < 2; attempt++) {
+          emit('progress', { kind: 'fs', message: `Extrayendo ${i + 1}/${files.length}: ${name}` });
+          await adb.pull(serial, f, dir);
+          sha = await sha256File(local);
+          if (sha === h.sha256) break;
+          store.log('pull.retry', { path: f, deviceSha256: h.sha256, localSha256: sha });
+          fs.unlinkSync(local);
+        }
+        if (!fs.existsSync(local)) await adb.pull(serial, f, dir); // tras 2 fallos conserva lo recibido para dejar constancia
+        emit('progress', { kind: 'fs', message: `Sellando ${i + 1}/${files.length}: ${name}` });
+        const rec = await mgr.register({ srcFile: local, fileName: name, type: 'media', device, preflight, sourcePath: f, mtime: st.mtime, deviceSha256: h.sha256, deviceHashedAt: h.hashedAt });
+        out.push(rec); emit('evidence', rec);
+      } catch (e) {
+        store.log('pull.error', { path: f, error: e.message });
+        out.push({ path: f, error: e.message });
+        emit('error', { message: `${name}: ${e.message}` });
+      }
     }
     fs.rmSync(stage, { recursive: true, force: true });
-    store.log('pull.done', { remote, count: out.length });
+    store.log('pull.done', { count: out.length, ok: out.filter((r) => !r.error).length });
     return out;
   }
 }

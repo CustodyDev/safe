@@ -1,5 +1,5 @@
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, session, webContents, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell, nativeImage, Menu } = require('electron');
 const fs = require('fs');
 const path = require('path');
 
@@ -11,7 +11,6 @@ const { runPreflight } = require('./src/core/preflight');
 const { checkConnectivity, setFetcher } = require('./src/core/net');
 
 const VERSION = app.getVersion();
-const BROWSER_PARTITION = 'persist:safe-browser';
 let win;
 let adb; let store = null; let mgr = null; let acq = null;
 
@@ -93,40 +92,31 @@ function registerIpc() {
   handle('act:screenshot', async ({ serial, ack }) => acq.screenshot(serial, await gate('screenshot', ack)));
   handle('act:backup', async ({ serial, options, ack }) => acq.startBackup(serial, options, await gate('backup', ack)));
   handle('act:backupCancel', () => acq.cancelBackup());
-  handle('act:recStart', async ({ serial, ack }) => acq.startRecording(serial, await gate('record', ack)));
+  handle('act:liveStart', async ({ serial, maxSize, control, ack }) => { await gate('live', ack); return acq.startLive(serial, { maxSize: Number(maxSize) || 0, control: control !== false }); });
+  handle('act:liveStop', () => acq.stopLive());
+  handle('act:recStart', async ({ ack }) => acq.startRecording(await gate('record', ack)));
   handle('act:recStop', () => acq.stopRecording());
-  handle('act:pull', async ({ serial, remote, ack }) => acq.pullMedia(serial, remote, await gate('pull', ack)));
 
-  handle('browser:capture', async ({ wcId, ack }) => {
-    const pf = await gate('browser-capture', ack);
-    const wc = webContents.fromId(wcId);
-    if (!wc || wc.getType() !== 'webview') throw new Error('Pestaña del navegador no válida');
-    const url = wc.getURL(); const title = wc.getTitle();
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '');
-    const host = (() => { try { return new URL(url).hostname; } catch (_) { return 'pagina'; } })();
-    const png = path.join(store.stagingDir(), `web_${host}_${stamp}.png`);
-    fs.writeFileSync(png, (await wc.capturePage()).toPNG());
-    const mht = path.join(store.stagingDir(), `web_${host}_${stamp}.mhtml`);
-    await wc.savePage(mht, 'MHTML');
-    const shot = await mgr.register({ srcFile: png, type: 'web', sourceUrl: url, origin: `Navegador interno de S.A.F.E. — «${title}»`, preflight: pf });
-    emit('evidence', shot);
-    const page = await mgr.register({ srcFile: mht, type: 'webpage', sourceUrl: url, origin: `Navegador interno de S.A.F.E. — «${title}»`, parent: shot.id, preflight: pf });
-    emit('evidence', page);
-    return [shot, page];
-  });
+  // Explorador de archivos del dispositivo
+  handle('fs:list', ({ serial, dir }) => acq.listDir(serial, dir));
+  handle('fs:hash', async ({ serial, paths, ack }) => { await gate('fs-hash', ack); return acq.hashRemote(serial, paths); });
+  handle('fs:extract', async ({ serial, paths, ack }) => acq.extractFiles(serial, paths, await gate('extract', ack)));
 
   handle('ev:list', () => (store ? store.list() : []));
   handle('ev:reveal', ({ id }) => { const r = store.list().find((e) => e.id === id); if (r) shell.showItemInFolder(path.join(store.dir, r.relPath)); });
   handle('ev:openReport', ({ id }) => { const r = store.list().find((e) => e.id === id); if (r) shell.openPath(path.join(store.dir, r.reportFile)); });
   handle('ev:refreshOts', async ({ ack }) => mgr.refreshTimestamps(await gate('ots-refresh', ack)));
   handle('ev:verify', () => mgr.verifyIntegrity());
+  handle('ev:verifyOne', async ({ id }) => mgr.verifyOne(id, { online: (await checkConnectivity()).online }));
   handle('ev:log', () => (store ? fs.readFileSync(store.custodyFile, 'utf8').trim().split('\n').slice(-200).map((l) => JSON.parse(l)) : []));
 }
+
+ipcMain.on('safe:control', (_e, msg) => { try { if (acq) acq.control(msg); } catch (_) { /* sesión cerrada */ } });
 
 function createWindow() {
   win = new BrowserWindow({
     width: 1400, height: 880, minWidth: 1100, minHeight: 700, backgroundColor: '#0b1220', title: 'S.A.F.E. — Secure Android Forensic Extractor',
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, webviewTag: true },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
@@ -145,18 +135,7 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null);
   registerIpc();
 
-  // Endurecimiento del navegador interno
-  const ses = session.fromPartition(BROWSER_PARTITION);
-  ses.setPermissionRequestHandler((_wc, _perm, cb) => cb(false));
-  app.on('web-contents-created', (_e, contents) => {
-    if (contents.getType() === 'webview') {
-      contents.setWindowOpenHandler(({ url }) => { contents.loadURL(url); return { action: 'deny' }; });
-    }
-    contents.on('will-attach-webview', (ev, prefs) => {
-      delete prefs.preload; prefs.nodeIntegration = false; prefs.contextIsolation = true; prefs.sandbox = true;
-    });
-  });
   createWindow();
 });
 
-app.on('window-all-closed', () => { if (acq) { acq.stopRecording(); acq.cancelBackup(); } app.quit(); });
+app.on('window-all-closed', async () => { if (acq) { acq.cancelBackup(); try { await acq.stopLive(); } catch (_) { /* cerrando */ } } app.quit(); });

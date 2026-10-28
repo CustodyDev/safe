@@ -8,7 +8,7 @@
   "author": "S.A.F.E. Project",
   "scripts": {
     "start": "electron .",
-    "test": "node --test test/core.test.js test/ots.test.js",
+    "test": "node --test test/core.test.js test/ots.test.js test/scrcpy.test.js",
     "dist": "electron-builder",
     "dist:win": "electron-builder --win",
     "dist:mac": "electron-builder --mac",
@@ -28,7 +28,10 @@
     "appId": "org.safe.forensic.extractor",
     "productName": "S.A.F.E.",
     "files": ["main.js", "preload.js", "src/**", "renderer/**", "assets/**", "package.json"],
-    "extraResources": [{ "from": "platform-tools", "to": "platform-tools", "filter": ["**/*"] }],
+    "extraResources": [
+      { "from": "vendor", "to": "vendor", "filter": ["scrcpy-server-*"] },
+      { "from": "platform-tools", "to": "platform-tools", "filter": ["**/*"] }
+    ],
     "win": { "target": ["nsis", "portable"] },
     "mac": { "target": ["dmg"], "category": "public.app-category.utilities" },
     "linux": { "target": ["AppImage", "deb"], "category": "Utility" }

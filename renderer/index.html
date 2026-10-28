@@ -17,10 +17,9 @@
       <button data-view="case" class="active"><i>①</i>Caso y ajustes</button>
       <button data-view="backup"><i>②</i>Copia ADB</button>
       <button data-view="screen"><i>③</i>Pantalla en vivo</button>
-      <button data-view="files"><i>④</i>Archivos multimedia</button>
-      <button data-view="browser"><i>⑤</i>Navegador interno</button>
-      <button data-view="evidence"><i>⑥</i>Evidencias <span id="evCount" class="badge">0</span></button>
-      <button data-view="log"><i>⑦</i>Cadena de custodia</button>
+      <button data-view="files"><i>④</i>Explorador de archivos</button>
+      <button data-view="evidence"><i>⑤</i>Evidencias <span id="evCount" class="badge">0</span></button>
+      <button data-view="log"><i>⑥</i>Cadena de custodia</button>
     </nav>
     <div class="side-foot">v1.0.0 · SHA-256 + OpenTimestamps</div>
   </aside>
@@ -79,39 +78,45 @@
     <section id="view-screen" class="view">
       <h1>Pantalla en vivo</h1>
       <div class="grid-screen">
-        <div class="phone"><canvas id="live" width="360" height="760"></canvas><div id="liveEmpty">Sin señal</div></div>
+        <div>
+          <div class="phone"><canvas id="live" width="360" height="760" tabindex="0"></canvas><div id="liveEmpty">Sin señal</div></div>
+          <div class="keys" id="keys">
+            <button data-k="4" title="Atrás">◀</button><button data-k="3" title="Inicio">●</button><button data-k="187" title="Recientes">■</button>
+            <button data-k="24" title="Volumen +">Vol+</button><button data-k="25" title="Volumen −">Vol−</button><button data-k="26" title="Encender/apagar">⏻</button>
+          </div>
+        </div>
         <div class="card">
-          <h2>Control</h2>
-          <div class="row"><button id="btnRec" class="primary">● Iniciar grabación</button><button id="btnRecStop" class="danger" disabled>■ Detener</button></div>
-          <div class="row"><button id="btnShot">📷 Captura de pantalla</button></div>
-          <div class="kpi"><span>Estado</span><b id="recState">Inactivo</b></div>
-          <div class="kpi"><span>Tiempo</span><b id="recTime">00:00</b></div>
+          <h2>Sesión</h2>
+          <div class="row"><button id="btnLive" class="primary">▶ Conectar pantalla</button><button id="btnLiveStop" class="danger" disabled>Desconectar</button></div>
+          <div class="opts">
+            <label class="chk"><input type="checkbox" id="optControl" checked> Permitir interacción (ratón/teclado)</label>
+            <label>Resolución<select id="optSize"><option value="0">Nativa (máxima calidad)</option><option value="1920">Máx. 1920 px</option><option value="1280" selected>Máx. 1280 px (más fluida)</option><option value="800">Máx. 800 px</option></select></label>
+          </div>
+          <h2>Grabación (archivo único)</h2>
+          <div class="row"><button id="btnRec" class="primary" disabled>● Iniciar grabación</button><button id="btnRecStop" class="danger" disabled>■ Detener y sellar</button><button id="btnShot">📷 Captura</button></div>
+          <div class="kpi"><span>Estado</span><b id="recState">Sin conexión</b></div>
+          <div class="kpi"><span>Tiempo grabado</span><b id="recTime">00:00</b></div>
+          <div class="kpi"><span>Fluidez</span><b id="liveFps">— fps</b></div>
           <div class="kpi"><span>App en primer plano</span><b id="fgApp" class="mono">—</b></div>
-          <p class="hint">La grabación se divide en segmentos de 3 min (límite de Android). Cada segmento es una evidencia con su hash, sello e informe.</p>
+          <div class="note warn">Interactuar <b>modifica el estado del dispositivo</b>. Cada sesión se registra en la cadena de custodia con el nº de acciones. Para una adquisición estricta sin contacto, desmarque «Permitir interacción».</div>
+          <p class="hint">Vídeo H.264 directo del dispositivo (scrcpy), sin recodificar. La grabación es <b>un único archivo</b> continuo, sin límite de 3 min.</p>
         </div>
       </div>
     </section>
 
     <section id="view-files" class="view">
-      <h1>Archivos multimedia</h1>
-      <div class="card">
-        <label>Ruta en el dispositivo<input id="pullPath" value="/sdcard/DCIM/Camera"></label>
-        <div class="chips"><button class="ghost q" data-p="/sdcard/DCIM">DCIM</button><button class="ghost q" data-p="/sdcard/Pictures">Pictures</button><button class="ghost q" data-p="/sdcard/Download">Download</button><button class="ghost q" data-p="/sdcard/Movies">Movies</button><button class="ghost q" data-p="/sdcard/WhatsApp/Media">WhatsApp</button></div>
-        <div class="row"><button id="btnPull" class="primary">Extraer y registrar</button></div>
-        <p id="pullStatus" class="hint">El nombre original de cada archivo se conserva y se destaca en el informe. Cada archivo genera su hash, sello e informe.</p>
-      </div>
-    </section>
-
-    <section id="view-browser" class="view">
-      <h1>Navegador interno</h1>
-      <div class="card nav-card">
+      <h1>Explorador de archivos</h1>
+      <div class="card tablecard">
         <div class="urlbar">
-          <button id="bBack" class="ghost">←</button><button id="bFwd" class="ghost">→</button><button id="bReload" class="ghost">⟳</button>
-          <input id="bUrl" placeholder="Escriba una dirección y pulse Intro">
-          <button id="bCapture" class="primary">Capturar y sellar</button>
+          <button id="fUp" class="ghost" title="Subir">↑</button><button id="fReload" class="ghost" title="Actualizar">⟳</button>
+          <input id="fPath" value="/sdcard">
+          <button class="ghost q" data-p="/sdcard">/sdcard</button><button class="ghost q" data-p="/sdcard/DCIM">DCIM</button><button class="ghost q" data-p="/sdcard/Download">Download</button><button class="ghost q" data-p="/sdcard/Android/media">media</button>
         </div>
-        <webview id="wv" src="about:blank" partition="persist:safe-browser" allowpopups="false"></webview>
+        <table id="fTable"><thead><tr><th style="width:32px"><input type="checkbox" id="fAll"></th><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th>Permisos</th><th>SHA-256 (en dispositivo)</th></tr></thead><tbody></tbody></table>
+        <div id="fEmpty" class="empty">Seleccione un dispositivo y pulse ⟳.</div>
       </div>
+      <div class="row bar"><button id="btnFsHash">🔎 Calcular SHA-256 en el dispositivo</button><button id="btnFsExtract" class="primary">⬇ Extraer seleccionados (con verificación)</button><span id="fSel" class="hint">0 seleccionados</span></div>
+      <p id="fsStatus" class="hint">Flujo: 1) marque ficheros o carpetas, 2) calcule su SHA-256 <b>en el dispositivo</b> antes de tocarlos, 3) extraiga: S.A.F.E. recalcula el hash del archivo recibido y lo compara. Cada fichero genera su evidencia (nombre original, sello e informe). Sin root solo se accede a almacenamiento compartido.</p>
     </section>
 
     <section id="view-evidence" class="view">
@@ -131,7 +136,7 @@
 </div>
 
 <div class="modal" id="modal" hidden>
-  <div class="dialog"><h3 id="mTitle"></h3><p id="mBody"></p><div class="row end"><button id="mCancel">Cancelar</button><button id="mOk" class="primary">Continuar de todos modos</button></div></div>
+  <div class="dialog"><h3 id="mTitle"></h3><p id="mBody"></p><pre id="mPre" class="logbox" hidden></pre><div class="row end"><button id="mCancel">Cancelar</button><button id="mOk" class="primary">Continuar de todos modos</button></div></div>
 </div>
 <script src="h264.js"></script>
 <script src="app.js"></script>

@@ -10,6 +10,7 @@
 | Dispositivo | Android con **Depuración USB** activada y cable de datos |
 | Internet | Recomendado: para el sellado en blockchain (OpenTimestamps) |
 | Opcional | `ffmpeg` en el PATH (genera copias `.mp4` de las grabaciones) |
+| Incluido | `scrcpy-server` v3.3.3 (en `vendor/`) para la pantalla en vivo; no requiere instalar scrcpy. Android 5.0+ |
 
 ## 2. Descargar
 
@@ -69,5 +70,7 @@ Linux sin entorno gráfico/root: ejecute `npx electron --no-sandbox .` si el san
 | «No se encontró ADB» | Instale platform-tools y/o indique la ruta en *Ajustes*. Use *Probar ADB*. |
 | Dispositivo `unauthorized` | Desbloquee el teléfono y acepte la huella RSA; si no aparece: *Revocar autorizaciones de depuración USB* y reconecte. |
 | No aparece el dispositivo (Linux) | Reglas udev del fabricante o `sudo adb kill-server && adb start-server`. |
+| La pantalla en vivo no conecta | Reconecte el cable, acepte la depuración USB, pruebe otra resolución. Algunos fabricantes (Xiaomi/MIUI) exigen activar «Depuración USB (ajustes de seguridad)» para permitir la interacción. |
+| «Permission denied» en el explorador | Esa ruta requiere root; use almacenamiento compartido (`/sdcard`). |
 | La copia ADB sale vacía | No confirmó en el teléfono, hay contraseña de copia, o Android restringe `adb backup` (ver README). |
 | Indicador «Sellado no disponible» | Sin Internet o calendarios caídos; puede extraer y sellar después. |

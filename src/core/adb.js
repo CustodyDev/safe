@@ -121,6 +121,72 @@ class Adb {
   pull(serial, remote, localDir) {
     return this.run(['-s', serial, 'pull', '-a', remote, localDir], { timeout: 6 * 3600 * 1000 });
   }
+
+  push(serial, local, remote) { return this.run(['-s', serial, 'push', local, remote], { timeout: 60000 }); }
+
+  /** Reenvío a un socket del dispositivo; devuelve el puerto local asignado. */
+  async forward(serial, remoteSpec) {
+    const { stdout } = await this.run(['-s', serial, 'forward', 'tcp:0', remoteSpec], { timeout: 10000 });
+    const port = parseInt(stdout.trim(), 10);
+    if (!port) throw new Error('adb forward no devolvió un puerto');
+    return port;
+  }
+  forwardRemove(serial, spec) { return this.run(['-s', serial, 'forward', '--remove', spec], { timeout: 10000 }); }
+
+  /** Lanza `adb shell <args…>` como proceso hijo (para el servidor scrcpy). */
+  spawnShell(serial, args) { return spawn(this.bin, ['-s', serial, 'shell', ...args]); }
+
+  /** Lista un directorio del dispositivo. */
+  async listDir(serial, dir) {
+    const { stdout } = await this.run(['-s', serial, 'shell', `ls -lA ${shq(dir)}`], { timeout: 30000 });
+    return parseLs(stdout);
+  }
+
+  /** Rutas de todos los ficheros bajo un directorio (o la propia ruta si es un fichero). */
+  async expand(serial, remote, { limit = 5000 } = {}) {
+    const out = await this.shell(serial, `if [ -d ${shq(remote)} ]; then find ${shq(remote)} -type f; elif [ -f ${shq(remote)} ]; then echo ${shq(remote)}; fi`, { timeout: 120000 });
+    const list = out.split(/\r?\n/).filter(Boolean);
+    if (list.length > limit) throw new Error(`La selección contiene ${list.length} ficheros (máx. ${limit}). Acote la carpeta.`);
+    return list;
+  }
+
+  async stat(serial, remote) {
+    const out = await this.shell(serial, `stat -c '%s %Y' ${shq(remote)}`);
+    const [size, mtime] = out.trim().split(/\s+/).map(Number);
+    if (!Number.isFinite(size)) throw new Error(`No se pudo leer ${remote}`);
+    return { size, mtime: new Date(mtime * 1000).toISOString() };
+  }
+
+  /** SHA-256 calculado EN el dispositivo (sha256sum / toybox / busybox). */
+  async sha256Remote(serial, remote) {
+    const cands = this._shaCmd ? [this._shaCmd] : ['sha256sum', 'toybox sha256sum', 'busybox sha256sum'];
+    let lastErr;
+    for (const c of cands) {
+      try {
+        const out = await this.shell(serial, `${c} ${shq(remote)}`, { timeout: 3 * 3600 * 1000 });
+        const m = out.match(/^([0-9a-f]{64})\s/m);
+        if (m) { this._shaCmd = c; return m[1]; }
+      } catch (e) { lastErr = e; if (/Permission denied|No such file/i.test(e.message)) throw e; }
+    }
+    throw new Error('El dispositivo no dispone de sha256sum' + (lastErr ? `: ${lastErr.message}` : ''));
+  }
+}
+
+/** Entrecomilla para el shell del dispositivo. */
+function shq(s) { return `'${String(s).replace(/'/g, `'\\''`)}'`; }
+
+/** Interpreta la salida de `ls -lA` (toybox/toolbox). */
+function parseLs(text) {
+  const re = /^([\-dlcbsp][rwxsStT\-]{9}[.+]?)\s+(?:(\d+)\s+)?(\S+)\s+(\S+)\s+(\d+(?:,\s*\d+)?)\s+(\d{4}-\d{2}-\d{2})\s+(\d{2}:\d{2})(?::\d{2})?\s+(.+)$/;
+  const out = [];
+  for (const line of text.split(/\r?\n/)) {
+    const m = line.match(re);
+    if (!m) continue;
+    let name = m[8]; let target = null;
+    if (m[1][0] === 'l' && name.includes(' -> ')) { [name, target] = name.split(' -> '); }
+    out.push({ name, type: m[1][0] === 'd' ? 'dir' : m[1][0] === 'l' ? 'link' : m[1][0] === '-' ? 'file' : 'other', perms: m[1], owner: m[3], group: m[4], size: parseInt(m[5], 10) || 0, mtime: `${m[6]} ${m[7]}`, target });
+  }
+  return out.sort((a, b) => (a.type === 'dir') === (b.type === 'dir') ? a.name.localeCompare(b.name) : a.type === 'dir' ? -1 : 1);
 }
 
 function parseDevices(text) {
@@ -149,4 +215,4 @@ function parseForeground(text) {
   return { package: pkg, activity: act.startsWith('.') ? pkg + act : act, component, source: focus ? 'mCurrentFocus' : 'mFocusedApp' };
 }
 
-module.exports = { Adb, resolveAdb, parseDevices, parseGetprop, parseForeground };
+module.exports = { Adb, resolveAdb, parseDevices, parseGetprop, parseForeground, parseLs, shq };
