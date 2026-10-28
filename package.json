@@ -1,0 +1,77 @@
+{
+  "name": "safe-forensic-extractor",
+  "productName": "S.A.F.E.",
+  "version": "1.0.0",
+  "description": "Secure Android Forensic Extractor (S.A.F.E.) - extracción forense de dispositivos Android con hash SHA-256 y sellado OpenTimestamps",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "S.A.F.E. Project",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test test/core.test.js test/ots.test.js test/scrcpy.test.js test/finalize.test.js test/native.test.js",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win",
+    "dist:mac": "electron-builder --mac",
+    "dist:linux": "electron-builder --linux"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "archiver": "^8.0.0",
+    "opentimestamps": "^0.4.9",
+    "pdfkit": "^0.20.2",
+    "yauzl": "^3.4.0"
+  },
+  "devDependencies": {
+    "electron": "^45.1.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "org.safe.forensic.extractor",
+    "productName": "S.A.F.E.",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**",
+      "renderer/**",
+      "assets/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor",
+        "to": "vendor",
+        "filter": [
+          "scrcpy-server-*"
+        ]
+      },
+      {
+        "from": "platform-tools",
+        "to": "platform-tools",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.utilities"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Utility"
+    }
+  }
+}

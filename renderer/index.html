@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; style-src 'self'; script-src 'self'; frame-src 'self'; connect-src 'self'">
+<title>S.A.F.E. — Secure Android Forensic Extractor</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <svg viewBox="0 0 32 32" width="30" height="30" aria-hidden="true"><path d="M16 2 4 7v8c0 7.2 5 12.9 12 15 7-2.100 12-7.800 12-15V7L16 2z" fill="none" stroke="#14b8a6" stroke-width="2"/><path d="m10.500 16 4 4 7-8" fill="none" stroke="#14b8a6" stroke-width="2.400" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      <div><b>S.A.F.E.</b><small>Secure Android Forensic Extractor</small></div>
+    </div>
+    <nav id="nav">
+      <button data-view="case" class="active"><i>①</i>Caso y ajustes</button>
+      <button data-view="backup"><i>②</i>Copia ADB</button>
+      <button data-view="screen"><i>③</i>Pantalla en vivo</button>
+      <button data-view="files"><i>④</i>Explorador de archivos</button>
+      <button data-view="evidence"><i>⑤</i>Evidencias <span id="evCount" class="badge">0</span></button>
+      <button data-view="log"><i>⑥</i>Cadena de custodia</button>
+      <button data-view="final"><i>⑦</i>Finalizar caso</button>
+    </nav>
+    <div class="side-foot">v1.0.0 · SHA-256 + OpenTimestamps</div>
+  </aside>
+
+  <main class="main">
+    <header class="top">
+      <div class="chip" id="caseChip">Sin caso abierto</div>
+      <div class="dev">
+        <select id="deviceSel"><option value="">— Sin dispositivo —</option></select>
+        <button id="btnRefreshDev" class="ghost" title="Buscar dispositivos">⟳</button>
+      </div>
+      <div class="pills">
+        <span class="pill" id="pillNet"><i></i>Internet</span>
+        <span class="pill" id="pillOts"><i></i>Sellado OTS</span>
+      </div>
+    </header>
+
+    <section id="view-case" class="view active">
+      <h1>Caso y ajustes</h1>
+      <div class="grid2">
+        <div class="card">
+          <h2>Caso</h2>
+          <label>Identificador del caso<input id="caseId" placeholder="p. ej. CASO-2026-014"></label>
+          <label>Examinador<input id="examiner" placeholder="Nombre y apellidos"></label>
+          <label>Notas<textarea id="caseNotes" rows="3" placeholder="Autorización, motivo, observaciones…"></textarea></label>
+          <div class="row"><button id="btnCreateCase" class="primary">Crear / continuar caso</button><button id="btnOpenCase">Abrir caso existente…</button><button id="btnCaseFolder" class="ghost">Abrir carpeta</button></div>
+        </div>
+        <div class="card">
+          <h2>Entorno</h2>
+          <label>Ruta de ADB (vacío = automática)<input id="adbPath" placeholder="/ruta/a/platform-tools/adb"></label>
+          <label>Carpeta de casos<input id="casesDir"></label>
+          <div class="row"><button id="btnSaveCfg">Guardar ajustes</button><button id="btnAdbTest" class="ghost">Probar ADB</button></div>
+          <p id="adbStatus" class="hint"></p>
+          <div class="note">Antes de <b>cada</b> extracción, S.A.F.E. comprueba Internet y la disponibilidad del servicio de sellado en blockchain, y deja constancia en <code>preflight/</code> y en la cadena de custodia.</div>
+        </div>
+      </div>
+      <div class="card" id="devCard"><h2>Dispositivo seleccionado</h2><div id="devInfo" class="hint">Conecte un dispositivo con depuración USB activada y pulse ⟳.</div></div>
+    </section>
+
+    <section id="view-backup" class="view">
+      <h1>Copia de seguridad ADB</h1>
+      <div class="card">
+        <div class="opts">
+          <label class="chk"><input type="checkbox" id="bkApk" checked> Incluir APK</label>
+          <label class="chk"><input type="checkbox" id="bkShared" checked> Almacenamiento compartido</label>
+          <label class="chk"><input type="checkbox" id="bkObb"> Incluir OBB</label>
+          <label class="chk"><input type="checkbox" id="bkSystem"> Apps del sistema</label>
+        </div>
+        <div class="row"><button id="btnBackup" class="primary">Iniciar copia de seguridad</button><button id="btnBackupCancel" class="danger" disabled>Cancelar</button></div>
+        <div class="progress"><div id="bkBar"></div></div>
+        <p id="bkStatus" class="hint">Se le pedirá confirmar la copia en la pantalla del dispositivo (sin contraseña).</p>
+        <div class="note warn">Android 12+ restringe <code>adb backup</code> para apps que lo excluyen; la copia puede ser parcial. Se registra el resultado tal como se obtuvo.</div>
+      </div>
+    </section>
+
+    <section id="view-screen" class="view">
+      <h1>Pantalla en vivo</h1>
+      <div class="grid-screen">
+        <div>
+          <div class="phone"><canvas id="live" width="360" height="760" tabindex="0"></canvas><div id="liveEmpty">Sin señal</div></div>
+          <div class="keys" id="keys">
+            <button data-k="4" title="Atrás">◀</button><button data-k="3" title="Inicio">●</button><button data-k="187" title="Recientes">■</button>
+            <button data-k="24" title="Volumen +">Vol+</button><button data-k="25" title="Volumen −">Vol−</button><button data-k="26" title="Encender/apagar">⏻</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>Sesión</h2>
+          <div class="row"><button id="btnLive" class="primary">▶ Conectar pantalla</button><button id="btnLiveStop" class="danger" disabled>Desconectar</button></div>
+          <div class="opts">
+            <label>Motor<select id="optEngine"><option value="scrcpy">scrcpy — interactivo (sube un servidor temporal al teléfono)</option><option value="native">ADB nativo — sin huella en el teléfono, solo observar</option></select></label>
+            <label class="chk"><input type="checkbox" id="optControl" checked> Permitir interacción (ratón/teclado)</label>
+            <label>Resolución<select id="optSize"><option value="0">Nativa (máxima calidad)</option><option value="1920">Máx. 1920 px</option><option value="1280" selected>Máx. 1280 px (más fluida)</option><option value="800">Máx. 800 px</option></select></label>
+          </div>
+          <h2>Grabación (archivo único)</h2>
+          <div class="row"><button id="btnRec" class="primary" disabled>● Iniciar grabación</button><button id="btnRecStop" class="danger" disabled>■ Detener y sellar</button><button id="btnShot">📷 Captura</button></div>
+          <div class="kpi"><span>Estado</span><b id="recState">Sin conexión</b></div>
+          <div class="kpi"><span>Tiempo grabado</span><b id="recTime">00:00</b></div>
+          <div class="kpi"><span>Fluidez</span><b id="liveFps">— fps</b></div>
+          <div class="kpi"><span>App en primer plano</span><b id="fgApp" class="mono">—</b></div>
+          <div class="note warn">Interactuar <b>modifica el estado del dispositivo</b>. Cada sesión se registra en la cadena de custodia con el nº de acciones. Para una adquisición estricta sin contacto, desmarque «Permitir interacción».</div>
+          <p class="hint">Vídeo H.264 directo del dispositivo (scrcpy), sin recodificar. La grabación es <b>un único archivo</b> continuo, sin límite de 3 min.</p>
+        </div>
+      </div>
+    </section>
+
+    <section id="view-files" class="view">
+      <h1>Explorador de archivos</h1>
+      <div class="card tablecard">
+        <div class="urlbar">
+          <button id="fUp" class="ghost" title="Subir">↑</button><button id="fReload" class="ghost" title="Actualizar">⟳</button>
+          <input id="fPath" value="/sdcard">
+          <button class="ghost q" data-p="/sdcard">/sdcard</button><button class="ghost q" data-p="/sdcard/DCIM">DCIM</button><button class="ghost q" data-p="/sdcard/Download">Download</button><button class="ghost q" data-p="/sdcard/Android/media">media</button>
+        </div>
+        <table id="fTable"><thead><tr><th style="width:32px"><input type="checkbox" id="fAll"></th><th>Nombre</th><th>Tamaño</th><th>Modificado</th><th>Permisos</th><th>SHA-256 (en dispositivo)</th></tr></thead><tbody></tbody></table>
+        <div id="fEmpty" class="empty">Seleccione un dispositivo y pulse ⟳.</div>
+      </div>
+      <div class="row bar"><button id="btnFsHash">🔎 Calcular SHA-256 en el dispositivo</button><button id="btnFsExtract" class="primary">⬇ Extraer seleccionados (con verificación)</button><span id="fSel" class="hint">0 seleccionados</span></div>
+      <p id="fsStatus" class="hint">Flujo: 1) marque ficheros o carpetas, 2) calcule su SHA-256 <b>en el dispositivo</b> antes de tocarlos, 3) extraiga: S.A.F.E. recalcula el hash del archivo recibido y lo compara. Cada fichero genera su evidencia (nombre original, sello e informe). Sin root solo se accede a almacenamiento compartido.</p>
+    </section>
+
+    <section id="view-evidence" class="view">
+      <h1>Evidencias</h1>
+      <div class="row bar"><button id="btnOts" class="primary">Sellar / actualizar pruebas OTS</button><button id="btnVerify">Verificar integridad (SHA-256)</button></div>
+      <div class="card tablecard"><table id="evTable"><thead><tr><th>ID</th><th>Archivo</th><th>Tipo</th><th>SHA-256</th><th>Fecha (UTC)</th><th>Sello</th><th></th></tr></thead><tbody></tbody></table><div id="evEmpty" class="empty">Aún no hay evidencias.</div></div>
+    </section>
+
+    <section id="view-log" class="view">
+      <h1>Cadena de custodia</h1>
+      <div class="row bar"><button id="btnLogVerify">Verificar cadena de hashes</button><span id="logState" class="hint"></span></div>
+      <div class="card"><pre id="logBox" class="logbox"></pre></div>
+    </section>
+
+    <section id="view-final" class="view">
+      <h1>Finalizar caso</h1>
+      <div class="card">
+        <p>Cuando termine toda la extracción, S.A.F.E. realiza el <b>cierre del caso</b>:</p>
+        <ol class="steps"><li>Recalcula el SHA-256 de todas las evidencias y verifica la cadena de custodia.</li><li>Genera un manifiesto (<code>MANIFEST.json</code> / <code>.sha256</code>) con el hash de cada archivo.</li><li>Comprime el caso completo en un único ZIP.</li><li>Calcula el SHA-256 del ZIP y lo sella en OpenTimestamps.</li><li><b>Validación final:</b> relee el ZIP y comprueba que cada archivo coincide con el manifiesto y con el hash de su evidencia.</li></ol>
+        <div class="row"><button id="btnFinalize" class="primary">Finalizar y comprimir caso</button><button id="btnFinalFolder" class="ghost" disabled>Mostrar paquete</button></div>
+        <div class="progress"><div></div></div>
+        <p id="finStatus" class="hint">Detenga antes cualquier sesión en vivo, grabación o copia en curso.</p>
+        <div id="finResult"></div>
+      </div>
+    </section>
+
+    <footer class="toast-area" id="toasts"></footer>
+  </main>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="dialog"><h3 id="mTitle"></h3><p id="mBody"></p><pre id="mPre" class="logbox" hidden></pre><div class="row end"><button id="mCancel">Cancelar</button><button id="mOk" class="primary">Continuar de todos modos</button></div></div>
+</div>
+<script src="h264.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
